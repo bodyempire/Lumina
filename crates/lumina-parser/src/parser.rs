@@ -471,7 +471,7 @@ impl Parser {
             Token::Text(ref s) => {
                 let s = s.clone();
                 self.advance();
-                Ok(self.parse_text_or_interpolated(&s, span))
+                self.parse_text_or_interpolated(&s, span)
             }
             Token::KwTrue  => { self.advance(); Ok(Expr::Bool(true)) }
             Token::KwFalse => { self.advance(); Ok(Expr::Bool(false)) }
@@ -521,9 +521,9 @@ impl Parser {
 
     // ── text interpolation ────────────────────────────────
 
-    fn parse_text_or_interpolated(&self, s: &str, span: Span) -> Expr {
+    fn parse_text_or_interpolated(&self, s: &str, span: Span) -> Result<Expr, ParseError> {
         if !s.contains('{') {
-            return Expr::Text(s.to_string());
+            return Ok(Expr::Text(s.to_string()));
         }
         let mut segments = vec![];
         let mut literal = String::new();
@@ -534,9 +534,16 @@ impl Parser {
                     segments.push(Segment::Literal(std::mem::take(&mut literal)));
                 }
                 let mut expr_str = String::new();
+                let mut closed = false;
                 for c in chars.by_ref() {
-                    if c == '}' { break; }
+                    if c == '}' { closed = true; break; }
                     expr_str.push(c);
+                }
+                if !closed {
+                    return Err(ParseError::new(
+                        "unclosed string interpolation '{', expected '}'".to_string(),
+                        span,
+                    ));
                 }
                 let trimmed = expr_str.trim();
                 if trimmed.contains('.') {
@@ -560,7 +567,7 @@ impl Parser {
         if !literal.is_empty() {
             segments.push(Segment::Literal(literal));
         }
-        Expr::Interpolated { segments, span }
+        Ok(Expr::Interpolated { segments, span })
     }
 
     // ── convenience extractors ────────────────────────────

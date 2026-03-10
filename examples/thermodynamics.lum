@@ -1,0 +1,34 @@
+-- thermodynamics.lum
+-- Demonstrates constraints, derived reactive boundaries, and temporal scheduling
+
+entity Sensor {
+  @doc "Temperature measured in Celsius"
+  @range -50 to 150
+  temp: Number
+  
+  -- The system continuously calculates boolean boundary states:
+  isHot := temp > 80
+  isCritical := temp >= 100
+}
+
+rule "Thermal Mitigation Warning" {
+  when Sensor.isHot becomes true
+  then show "WARNING: Over-temperature threshold crossed: {Sensor.temp}C."
+}
+
+rule "Sustained Emergency Shutdown" {
+  -- This rule triggers only if the state persists in the active condition for 5 seconds
+  when Sensor.isCritical becomes true for 5 s
+  then show "CRITICAL FAULT: Sustained structural temperature anomaly. Initiating emergency procedures."
+}
+
+let Node1 = Sensor { temp: 22 }
+show "Normal ops. Node1 Temp: {Node1.temp}C"
+
+-- Transition boundary triggers the warning
+update Node1.temp to 85
+
+-- Transition to critical triggers the temporal tracker window
+update Node1.temp to 105
+
+-- Given 5 simulated seconds in the runtime, the shutdown rule will cascade.

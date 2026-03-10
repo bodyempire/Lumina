@@ -1,0 +1,2 @@
+let P = Person { name: "Isaac" }
+show "Missing brace: {P.name"

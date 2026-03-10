@@ -1,0 +1,10 @@
+entity Light:
+    stored is_on: boolean
+    stored brightness: number @range(0 to 100)
+    
+    derived status := if is_on then "Active" else "Off"
+
+rule EnergySaver:
+    when Light.brightness > 80 for 5 minutes
+    then show "Reducing brightness for efficiency"
+    and update Light.brightness to 50

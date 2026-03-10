@@ -1,6 +1,20 @@
-show "lumina"
-
-rule "hello" {
-  when true
-  then show "hello"
+entity Hero {
+  name: Text
+  health: Number
+  isAlive := health > 0
+  status := if isAlive then "{name} is ready for battle with {health} HP!" else "{name} has fallen."
 }
+
+rule "low health warning" { 
+  when Hero.health < 20
+  then show "WARNING: {Hero.name}'s health is critically low!"
+}
+
+let Hero = Hero { name: "John", health: 100 }
+show Hero.status
+
+update Hero.health to 15
+show Hero.status
+
+update Hero.health to 0
+show Hero.status

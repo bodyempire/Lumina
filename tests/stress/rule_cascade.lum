@@ -1,0 +1,780 @@
+entity Cascade {
+  f0: Boolean
+  f1: Boolean
+  f2: Boolean
+  f3: Boolean
+  f4: Boolean
+  f5: Boolean
+  f6: Boolean
+  f7: Boolean
+  f8: Boolean
+  f9: Boolean
+  f10: Boolean
+  f11: Boolean
+  f12: Boolean
+  f13: Boolean
+  f14: Boolean
+  f15: Boolean
+  f16: Boolean
+  f17: Boolean
+  f18: Boolean
+  f19: Boolean
+  f20: Boolean
+  f21: Boolean
+  f22: Boolean
+  f23: Boolean
+  f24: Boolean
+  f25: Boolean
+  f26: Boolean
+  f27: Boolean
+  f28: Boolean
+  f29: Boolean
+  f30: Boolean
+  f31: Boolean
+  f32: Boolean
+  f33: Boolean
+  f34: Boolean
+  f35: Boolean
+  f36: Boolean
+  f37: Boolean
+  f38: Boolean
+  f39: Boolean
+  f40: Boolean
+  f41: Boolean
+  f42: Boolean
+  f43: Boolean
+  f44: Boolean
+  f45: Boolean
+  f46: Boolean
+  f47: Boolean
+  f48: Boolean
+  f49: Boolean
+  f50: Boolean
+  f51: Boolean
+  f52: Boolean
+  f53: Boolean
+  f54: Boolean
+  f55: Boolean
+  f56: Boolean
+  f57: Boolean
+  f58: Boolean
+  f59: Boolean
+  f60: Boolean
+  f61: Boolean
+  f62: Boolean
+  f63: Boolean
+  f64: Boolean
+  f65: Boolean
+  f66: Boolean
+  f67: Boolean
+  f68: Boolean
+  f69: Boolean
+  f70: Boolean
+  f71: Boolean
+  f72: Boolean
+  f73: Boolean
+  f74: Boolean
+  f75: Boolean
+  f76: Boolean
+  f77: Boolean
+  f78: Boolean
+  f79: Boolean
+  f80: Boolean
+  f81: Boolean
+  f82: Boolean
+  f83: Boolean
+  f84: Boolean
+  f85: Boolean
+  f86: Boolean
+  f87: Boolean
+  f88: Boolean
+  f89: Boolean
+  f90: Boolean
+  f91: Boolean
+  f92: Boolean
+  f93: Boolean
+  f94: Boolean
+  f95: Boolean
+  f96: Boolean
+  f97: Boolean
+  f98: Boolean
+  f99: Boolean
+  f100: Boolean
+  f101: Boolean
+  f102: Boolean
+  f103: Boolean
+  f104: Boolean
+  f105: Boolean
+  f106: Boolean
+  f107: Boolean
+  f108: Boolean
+  f109: Boolean
+  f110: Boolean
+}
+
+let Cascade = Cascade {
+  f0: false,
+  f1: false,
+  f2: false,
+  f3: false,
+  f4: false,
+  f5: false,
+  f6: false,
+  f7: false,
+  f8: false,
+  f9: false,
+  f10: false,
+  f11: false,
+  f12: false,
+  f13: false,
+  f14: false,
+  f15: false,
+  f16: false,
+  f17: false,
+  f18: false,
+  f19: false,
+  f20: false,
+  f21: false,
+  f22: false,
+  f23: false,
+  f24: false,
+  f25: false,
+  f26: false,
+  f27: false,
+  f28: false,
+  f29: false,
+  f30: false,
+  f31: false,
+  f32: false,
+  f33: false,
+  f34: false,
+  f35: false,
+  f36: false,
+  f37: false,
+  f38: false,
+  f39: false,
+  f40: false,
+  f41: false,
+  f42: false,
+  f43: false,
+  f44: false,
+  f45: false,
+  f46: false,
+  f47: false,
+  f48: false,
+  f49: false,
+  f50: false,
+  f51: false,
+  f52: false,
+  f53: false,
+  f54: false,
+  f55: false,
+  f56: false,
+  f57: false,
+  f58: false,
+  f59: false,
+  f60: false,
+  f61: false,
+  f62: false,
+  f63: false,
+  f64: false,
+  f65: false,
+  f66: false,
+  f67: false,
+  f68: false,
+  f69: false,
+  f70: false,
+  f71: false,
+  f72: false,
+  f73: false,
+  f74: false,
+  f75: false,
+  f76: false,
+  f77: false,
+  f78: false,
+  f79: false,
+  f80: false,
+  f81: false,
+  f82: false,
+  f83: false,
+  f84: false,
+  f85: false,
+  f86: false,
+  f87: false,
+  f88: false,
+  f89: false,
+  f90: false,
+  f91: false,
+  f92: false,
+  f93: false,
+  f94: false,
+  f95: false,
+  f96: false,
+  f97: false,
+  f98: false,
+  f99: false,
+  f100: false,
+  f101: false,
+  f102: false,
+  f103: false,
+  f104: false,
+  f105: false,
+  f106: false,
+  f107: false,
+  f108: false,
+  f109: false,
+  f110: false
+}
+
+rule "r0" {
+  when Cascade.f0 becomes true
+  then update Cascade.f1 to true
+}
+
+rule "r1" {
+  when Cascade.f1 becomes true
+  then update Cascade.f2 to true
+}
+
+rule "r2" {
+  when Cascade.f2 becomes true
+  then update Cascade.f3 to true
+}
+
+rule "r3" {
+  when Cascade.f3 becomes true
+  then update Cascade.f4 to true
+}
+
+rule "r4" {
+  when Cascade.f4 becomes true
+  then update Cascade.f5 to true
+}
+
+rule "r5" {
+  when Cascade.f5 becomes true
+  then update Cascade.f6 to true
+}
+
+rule "r6" {
+  when Cascade.f6 becomes true
+  then update Cascade.f7 to true
+}
+
+rule "r7" {
+  when Cascade.f7 becomes true
+  then update Cascade.f8 to true
+}
+
+rule "r8" {
+  when Cascade.f8 becomes true
+  then update Cascade.f9 to true
+}
+
+rule "r9" {
+  when Cascade.f9 becomes true
+  then update Cascade.f10 to true
+}
+
+rule "r10" {
+  when Cascade.f10 becomes true
+  then update Cascade.f11 to true
+}
+
+rule "r11" {
+  when Cascade.f11 becomes true
+  then update Cascade.f12 to true
+}
+
+rule "r12" {
+  when Cascade.f12 becomes true
+  then update Cascade.f13 to true
+}
+
+rule "r13" {
+  when Cascade.f13 becomes true
+  then update Cascade.f14 to true
+}
+
+rule "r14" {
+  when Cascade.f14 becomes true
+  then update Cascade.f15 to true
+}
+
+rule "r15" {
+  when Cascade.f15 becomes true
+  then update Cascade.f16 to true
+}
+
+rule "r16" {
+  when Cascade.f16 becomes true
+  then update Cascade.f17 to true
+}
+
+rule "r17" {
+  when Cascade.f17 becomes true
+  then update Cascade.f18 to true
+}
+
+rule "r18" {
+  when Cascade.f18 becomes true
+  then update Cascade.f19 to true
+}
+
+rule "r19" {
+  when Cascade.f19 becomes true
+  then update Cascade.f20 to true
+}
+
+rule "r20" {
+  when Cascade.f20 becomes true
+  then update Cascade.f21 to true
+}
+
+rule "r21" {
+  when Cascade.f21 becomes true
+  then update Cascade.f22 to true
+}
+
+rule "r22" {
+  when Cascade.f22 becomes true
+  then update Cascade.f23 to true
+}
+
+rule "r23" {
+  when Cascade.f23 becomes true
+  then update Cascade.f24 to true
+}
+
+rule "r24" {
+  when Cascade.f24 becomes true
+  then update Cascade.f25 to true
+}
+
+rule "r25" {
+  when Cascade.f25 becomes true
+  then update Cascade.f26 to true
+}
+
+rule "r26" {
+  when Cascade.f26 becomes true
+  then update Cascade.f27 to true
+}
+
+rule "r27" {
+  when Cascade.f27 becomes true
+  then update Cascade.f28 to true
+}
+
+rule "r28" {
+  when Cascade.f28 becomes true
+  then update Cascade.f29 to true
+}
+
+rule "r29" {
+  when Cascade.f29 becomes true
+  then update Cascade.f30 to true
+}
+
+rule "r30" {
+  when Cascade.f30 becomes true
+  then update Cascade.f31 to true
+}
+
+rule "r31" {
+  when Cascade.f31 becomes true
+  then update Cascade.f32 to true
+}
+
+rule "r32" {
+  when Cascade.f32 becomes true
+  then update Cascade.f33 to true
+}
+
+rule "r33" {
+  when Cascade.f33 becomes true
+  then update Cascade.f34 to true
+}
+
+rule "r34" {
+  when Cascade.f34 becomes true
+  then update Cascade.f35 to true
+}
+
+rule "r35" {
+  when Cascade.f35 becomes true
+  then update Cascade.f36 to true
+}
+
+rule "r36" {
+  when Cascade.f36 becomes true
+  then update Cascade.f37 to true
+}
+
+rule "r37" {
+  when Cascade.f37 becomes true
+  then update Cascade.f38 to true
+}
+
+rule "r38" {
+  when Cascade.f38 becomes true
+  then update Cascade.f39 to true
+}
+
+rule "r39" {
+  when Cascade.f39 becomes true
+  then update Cascade.f40 to true
+}
+
+rule "r40" {
+  when Cascade.f40 becomes true
+  then update Cascade.f41 to true
+}
+
+rule "r41" {
+  when Cascade.f41 becomes true
+  then update Cascade.f42 to true
+}
+
+rule "r42" {
+  when Cascade.f42 becomes true
+  then update Cascade.f43 to true
+}
+
+rule "r43" {
+  when Cascade.f43 becomes true
+  then update Cascade.f44 to true
+}
+
+rule "r44" {
+  when Cascade.f44 becomes true
+  then update Cascade.f45 to true
+}
+
+rule "r45" {
+  when Cascade.f45 becomes true
+  then update Cascade.f46 to true
+}
+
+rule "r46" {
+  when Cascade.f46 becomes true
+  then update Cascade.f47 to true
+}
+
+rule "r47" {
+  when Cascade.f47 becomes true
+  then update Cascade.f48 to true
+}
+
+rule "r48" {
+  when Cascade.f48 becomes true
+  then update Cascade.f49 to true
+}
+
+rule "r49" {
+  when Cascade.f49 becomes true
+  then update Cascade.f50 to true
+}
+
+rule "r50" {
+  when Cascade.f50 becomes true
+  then update Cascade.f51 to true
+}
+
+rule "r51" {
+  when Cascade.f51 becomes true
+  then update Cascade.f52 to true
+}
+
+rule "r52" {
+  when Cascade.f52 becomes true
+  then update Cascade.f53 to true
+}
+
+rule "r53" {
+  when Cascade.f53 becomes true
+  then update Cascade.f54 to true
+}
+
+rule "r54" {
+  when Cascade.f54 becomes true
+  then update Cascade.f55 to true
+}
+
+rule "r55" {
+  when Cascade.f55 becomes true
+  then update Cascade.f56 to true
+}
+
+rule "r56" {
+  when Cascade.f56 becomes true
+  then update Cascade.f57 to true
+}
+
+rule "r57" {
+  when Cascade.f57 becomes true
+  then update Cascade.f58 to true
+}
+
+rule "r58" {
+  when Cascade.f58 becomes true
+  then update Cascade.f59 to true
+}
+
+rule "r59" {
+  when Cascade.f59 becomes true
+  then update Cascade.f60 to true
+}
+
+rule "r60" {
+  when Cascade.f60 becomes true
+  then update Cascade.f61 to true
+}
+
+rule "r61" {
+  when Cascade.f61 becomes true
+  then update Cascade.f62 to true
+}
+
+rule "r62" {
+  when Cascade.f62 becomes true
+  then update Cascade.f63 to true
+}
+
+rule "r63" {
+  when Cascade.f63 becomes true
+  then update Cascade.f64 to true
+}
+
+rule "r64" {
+  when Cascade.f64 becomes true
+  then update Cascade.f65 to true
+}
+
+rule "r65" {
+  when Cascade.f65 becomes true
+  then update Cascade.f66 to true
+}
+
+rule "r66" {
+  when Cascade.f66 becomes true
+  then update Cascade.f67 to true
+}
+
+rule "r67" {
+  when Cascade.f67 becomes true
+  then update Cascade.f68 to true
+}
+
+rule "r68" {
+  when Cascade.f68 becomes true
+  then update Cascade.f69 to true
+}
+
+rule "r69" {
+  when Cascade.f69 becomes true
+  then update Cascade.f70 to true
+}
+
+rule "r70" {
+  when Cascade.f70 becomes true
+  then update Cascade.f71 to true
+}
+
+rule "r71" {
+  when Cascade.f71 becomes true
+  then update Cascade.f72 to true
+}
+
+rule "r72" {
+  when Cascade.f72 becomes true
+  then update Cascade.f73 to true
+}
+
+rule "r73" {
+  when Cascade.f73 becomes true
+  then update Cascade.f74 to true
+}
+
+rule "r74" {
+  when Cascade.f74 becomes true
+  then update Cascade.f75 to true
+}
+
+rule "r75" {
+  when Cascade.f75 becomes true
+  then update Cascade.f76 to true
+}
+
+rule "r76" {
+  when Cascade.f76 becomes true
+  then update Cascade.f77 to true
+}
+
+rule "r77" {
+  when Cascade.f77 becomes true
+  then update Cascade.f78 to true
+}
+
+rule "r78" {
+  when Cascade.f78 becomes true
+  then update Cascade.f79 to true
+}
+
+rule "r79" {
+  when Cascade.f79 becomes true
+  then update Cascade.f80 to true
+}
+
+rule "r80" {
+  when Cascade.f80 becomes true
+  then update Cascade.f81 to true
+}
+
+rule "r81" {
+  when Cascade.f81 becomes true
+  then update Cascade.f82 to true
+}
+
+rule "r82" {
+  when Cascade.f82 becomes true
+  then update Cascade.f83 to true
+}
+
+rule "r83" {
+  when Cascade.f83 becomes true
+  then update Cascade.f84 to true
+}
+
+rule "r84" {
+  when Cascade.f84 becomes true
+  then update Cascade.f85 to true
+}
+
+rule "r85" {
+  when Cascade.f85 becomes true
+  then update Cascade.f86 to true
+}
+
+rule "r86" {
+  when Cascade.f86 becomes true
+  then update Cascade.f87 to true
+}
+
+rule "r87" {
+  when Cascade.f87 becomes true
+  then update Cascade.f88 to true
+}
+
+rule "r88" {
+  when Cascade.f88 becomes true
+  then update Cascade.f89 to true
+}
+
+rule "r89" {
+  when Cascade.f89 becomes true
+  then update Cascade.f90 to true
+}
+
+rule "r90" {
+  when Cascade.f90 becomes true
+  then update Cascade.f91 to true
+}
+
+rule "r91" {
+  when Cascade.f91 becomes true
+  then update Cascade.f92 to true
+}
+
+rule "r92" {
+  when Cascade.f92 becomes true
+  then update Cascade.f93 to true
+}
+
+rule "r93" {
+  when Cascade.f93 becomes true
+  then update Cascade.f94 to true
+}
+
+rule "r94" {
+  when Cascade.f94 becomes true
+  then update Cascade.f95 to true
+}
+
+rule "r95" {
+  when Cascade.f95 becomes true
+  then update Cascade.f96 to true
+}
+
+rule "r96" {
+  when Cascade.f96 becomes true
+  then update Cascade.f97 to true
+}
+
+rule "r97" {
+  when Cascade.f97 becomes true
+  then update Cascade.f98 to true
+}
+
+rule "r98" {
+  when Cascade.f98 becomes true
+  then update Cascade.f99 to true
+}
+
+rule "r99" {
+  when Cascade.f99 becomes true
+  then update Cascade.f100 to true
+}
+
+rule "r100" {
+  when Cascade.f100 becomes true
+  then update Cascade.f101 to true
+}
+
+rule "r101" {
+  when Cascade.f101 becomes true
+  then update Cascade.f102 to true
+}
+
+rule "r102" {
+  when Cascade.f102 becomes true
+  then update Cascade.f103 to true
+}
+
+rule "r103" {
+  when Cascade.f103 becomes true
+  then update Cascade.f104 to true
+}
+
+rule "r104" {
+  when Cascade.f104 becomes true
+  then update Cascade.f105 to true
+}
+
+rule "r105" {
+  when Cascade.f105 becomes true
+  then update Cascade.f106 to true
+}
+
+rule "r106" {
+  when Cascade.f106 becomes true
+  then update Cascade.f107 to true
+}
+
+rule "r107" {
+  when Cascade.f107 becomes true
+  then update Cascade.f108 to true
+}
+
+rule "r108" {
+  when Cascade.f108 becomes true
+  then update Cascade.f109 to true
+}
+
+rule "r109" {
+  when Cascade.f109 becomes true
+  then update Cascade.f110 to true
+}
+
+update Cascade.f0 to true
+show "Cascade finished: {Cascade.f110}"
