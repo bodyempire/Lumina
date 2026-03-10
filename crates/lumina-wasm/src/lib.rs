@@ -1,0 +1,120 @@
+use wasm_bindgen::prelude::*;
+use std::collections::HashMap;
+use lumina_parser::parse;
+use lumina_parser::ast::*;
+use lumina_analyzer::analyze;
+use lumina_runtime::engine::Evaluator;
+
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+}
+
+#[wasm_bindgen]
+pub struct LuminaRuntime {
+    evaluator: Evaluator,
+}
+
+#[wasm_bindgen]
+impl LuminaRuntime {
+    #[wasm_bindgen(constructor)]
+    pub fn new(source: &str) -> Result<LuminaRuntime, JsValue> {
+        let program = parse(source)
+            .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
+
+        let analyzed = analyze(program)
+            .map_err(|errors| {
+                let msgs: Vec<String> = errors.iter()
+                    .map(|e| format!("[{}] {} (line {})", e.code, e.message, e.span.line))
+                    .collect();
+                JsValue::from_str(&msgs.join("\n"))
+            })?;
+
+        let mut rules = Vec::new();
+        let mut derived = HashMap::new();
+        for stmt in &analyzed.program.statements {
+            match stmt {
+                Statement::Rule(r) => rules.push(r.clone()),
+                Statement::Entity(e) => {
+                    for f in &e.fields {
+                        if let Field::Derived(df) = f {
+                            derived.insert((e.name.clone(), df.name.clone()), df.expr.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut evaluator = Evaluator::new(analyzed.schema, analyzed.graph, rules);
+        evaluator.derived_exprs = derived;
+
+        for stmt in &analyzed.program.statements {
+            evaluator.exec_statement(stmt)
+                .map_err(|e| JsValue::from_str(&format!(
+                    "Runtime error [{}]: {}", e.code(), e.message()
+                )))?;
+        }
+
+        Ok(LuminaRuntime { evaluator })
+    }
+
+    #[wasm_bindgen]
+    pub fn apply_event(
+        &mut self,
+        instance_name: &str,
+        field_name: &str,
+        value_json: &str,
+    ) -> Result<String, JsValue> {
+        let json_val: serde_json::Value = serde_json::from_str(value_json)
+            .map_err(|e| JsValue::from_str(&format!("Invalid JSON: {e}")))?;
+
+        let value = match json_val {
+            serde_json::Value::Number(n) => lumina_runtime::Value::Number(
+                n.as_f64().ok_or_else(|| JsValue::from_str("Invalid number"))?
+            ),
+            serde_json::Value::String(s) => lumina_runtime::Value::Text(s),
+            serde_json::Value::Bool(b)   => lumina_runtime::Value::Bool(b),
+            _ => return Err(JsValue::from_str("Unsupported value type")),
+        };
+
+        match self.evaluator.apply_event(instance_name, field_name, value) {
+            Ok(result) => Ok(serde_json::to_string(&result).unwrap()),
+            Err(rollback) => Err(JsValue::from_str(
+                &serde_json::to_string(&rollback.diagnostic).unwrap()
+            )),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn export_state(&self) -> String {
+        serde_json::to_string_pretty(&self.evaluator.export_state()).unwrap()
+    }
+
+    #[wasm_bindgen]
+    pub fn tick(&mut self) -> String {
+        match self.evaluator.tick() {
+            Ok(events) => serde_json::to_string(&events).unwrap(),
+            Err(rb) => format!("ERROR:{}", serde_json::to_string(&rb.diagnostic).unwrap()),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn get_output(&mut self) -> String {
+        self.evaluator.drain_output().join("\n")
+    }
+
+    #[wasm_bindgen]
+    pub fn check(source: &str) -> String {
+        match parse(source) {
+            Err(e) => format!("Parse error: {e}"),
+            Ok(program) => match analyze(program) {
+                Err(errors) => errors.iter()
+                    .map(|e| format!("[{}] {} (line {})", e.code, e.message, e.span.line))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                Ok(_) => String::new(),
+            }
+        }
+    }
+}

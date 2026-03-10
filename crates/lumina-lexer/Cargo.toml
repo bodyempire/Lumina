@@ -1,0 +1,8 @@
+[package]
+name = "lumina-lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+logos = "0.14"
+serde = { version = "1", features = ["derive"] }

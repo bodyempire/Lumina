@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lumina Playground</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #1a1d27 0%, #1e2235 100%);
+      border-bottom: 1px solid #2d3148;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #7c83ff, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+    header span {
+      font-size: 0.7rem;
+      color: #64748b;
+      background: #1e2235;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 1px solid #2d3148;
+    }
+    .toolbar {
+      padding: 8px 24px;
+      background: #151722;
+      border-bottom: 1px solid #2d3148;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    button {
+      padding: 7px 18px;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-family: inherit;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.1); }
+    button:active { transform: translateY(0); }
+    #btn-run {
+      background: linear-gradient(135deg, #7c83ff, #6366f1);
+      color: white;
+      box-shadow: 0 2px 8px rgba(124,131,255,.25);
+    }
+    #btn-check {
+      background: #1e2235;
+      color: #94a3b8;
+      border: 1px solid #2d3148;
+    }
+    #btn-clear {
+      background: #1e2235;
+      color: #94a3b8;
+      border: 1px solid #2d3148;
+    }
+    .examples {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+      align-items: center;
+    }
+    .examples span { font-size: 0.72rem; color: #475569; }
+    .example-btn {
+      background: #1e2235;
+      color: #7c83ff;
+      border: 1px solid #2d3148;
+      font-size: 0.72rem;
+      padding: 4px 12px;
+    }
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr auto;
+      overflow: hidden;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid #2d3148;
+    }
+    .panel-header {
+      padding: 8px 16px;
+      background: #151722;
+      border-bottom: 1px solid #2d3148;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    #editor {
+      flex: 1;
+      width: 100%;
+      background: #0f1117;
+      color: #e2e8f0;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 16px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.85rem;
+      line-height: 1.65;
+      tab-size: 2;
+    }
+    .right-panels {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #state-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      background: #0f1117;
+    }
+    #output-panel {
+      height: 180px;
+      overflow-y: auto;
+      padding: 12px 16px;
+      background: #080b10;
+      border-top: 1px solid #2d3148;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .output-line { margin-bottom: 2px; }
+    .output-line.error { color: #f87171; }
+    .output-line.info  { color: #64748b; }
+    .output-line.event { color: #a78bfa; }
+    .output-line.show  { color: #34d399; }
+    .status-bar {
+      padding: 5px 16px;
+      background: linear-gradient(135deg, #7c83ff, #6366f1);
+      font-size: 0.7rem;
+      color: white;
+      font-weight: 600;
+      grid-column: 1 / -1;
+    }
+    .status-bar.error { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+    .status-bar.idle  { background: #1e2235; color: #475569; }
+    .entity-block {
+      margin-bottom: 14px;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .entity-block:hover { border-color: #4a4f7a; }
+    .entity-name {
+      padding: 7px 14px;
+      background: linear-gradient(135deg, #1e2235, #23273a);
+      font-weight: 700;
+      color: #7c83ff;
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    .entity-type { color: #475569; font-weight: 400; font-size: 0.72rem; }
+    .field-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 14px;
+      border-top: 1px solid #1a1d27;
+      gap: 16px;
+      transition: background 0.15s;
+    }
+    .field-row:hover { background: #1a1d27; }
+    .field-name  { color: #94a3b8; }
+    .field-value { font-weight: 600; }
+    .field-value.bool-true  { color: #34d399; }
+    .field-value.bool-false { color: #f87171; }
+    .field-value.number { color: #fbbf24; }
+    .field-value.text   { color: #34d399; }
+    .empty-state {
+      color: #475569;
+      font-style: italic;
+      padding: 32px;
+      text-align: center;
+      font-family: 'Inter', sans-serif;
+    }
+    .kbd { font-size: 0.65rem; color: #475569; margin-left: 8px; background: #1e2235; padding: 2px 6px; border-radius: 3px; border: 1px solid #2d3148; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>⚡ Lumina Playground</h1>
+  <span>v1.3 · Declarative Reactive Language · WASM</span>
+</header>
+<div class="toolbar">
+  <button id="btn-run">▶ Run<span class="kbd">Ctrl+Enter</span></button>
+  <button id="btn-check">✓ Check</button>
+  <button id="btn-clear">✕ Clear</button>
+  <div class="examples">
+    <span>Examples:</span>
+    <button class="example-btn" data-example="fleet">Fleet OS</button>
+    <button class="example-btn" data-example="person">Person</button>
+    <button class="example-btn" data-example="shop">Shop</button>
+  </div>
+</div>
+<div class="main">
+  <div class="panel">
+    <div class="panel-header">Editor — .lum</div>
+    <textarea id="editor" spellcheck="false" placeholder="Write Lumina code here..."></textarea>
+  </div>
+  <div class="right-panels">
+    <div class="panel-header">Live State</div>
+    <div id="state-panel">
+      <div class="empty-state">Run a program to see reactive state here</div>
+    </div>
+    <div class="panel-header" style="border-top:1px solid #2d3148">Console Output</div>
+    <div id="output-panel">
+      <div class="output-line info">Lumina playground ready. Write code and press ▶ Run.</div>
+    </div>
+  </div>
+  <div class="status-bar idle" id="status">Ready</div>
+</div>
+
+<script type="module">
+  import init, { LuminaRuntime } from '../crates/lumina-wasm/pkg/lumina_wasm.js';
+  await init();
+
+  const editor = document.getElementById('editor');
+  const statePanel = document.getElementById('state-panel');
+  const outputPanel = document.getElementById('output-panel');
+  const status = document.getElementById('status');
+  let runtime = null;
+  let tickInterval = null;
+
+  const EXAMPLES = {
+    fleet: `-- E-Moto Fleet OS
+entity Moto {
+  battery: Number
+  isBusy: Boolean
+  status: Text
+  isLowBattery := battery < 20
+  isCritical   := battery < 5
+  isAvailable  := not isBusy and battery > 15
+}
+
+entity Fleet {
+  name: Text
+}
+
+rule "low battery alert" {
+  when Moto.isLowBattery becomes true
+  then show "ALERT: battery low"
+}
+
+rule "critical battery" {
+  when Moto.isCritical becomes true
+  then update Moto.status to "maintenance"
+  then show "CRITICAL: Moto pulled from service"
+}
+
+let Moto = Moto { battery: 80, isBusy: false, status: "available" }
+let Fleet = Fleet { name: "Kigali Fleet Alpha" }
+
+update Moto.battery to 18
+update Moto.battery to 4
+show "Fleet: {Fleet.name}"
+show "Moto available: {Moto.isAvailable}"`,
+
+    person: `-- Person entity with derived fields
+entity Person {
+  name: Text
+  birthYear: Number
+  age     := 2026 - birthYear
+  isAdult := age >= 18
+  grade   := if age >= 18 then "adult" else "minor"
+}
+
+let Person = Person { name: "Isaac", birthYear: 2000 }
+show "Name: {Person.name}"
+show "Age: {Person.age}"
+show "Grade: {Person.grade}"`,
+
+    shop: `-- Simple shop inventory
+entity Product {
+  name: Text
+  price: Number
+  stock: Number
+  isAvailable := stock > 0
+  isLowStock  := stock > 0 and stock < 5
+}
+
+rule "sold out" {
+  when Product.isAvailable becomes false
+  then show "OUT OF STOCK"
+}
+
+rule "low stock" {
+  when Product.isLowStock becomes true
+  then show "LOW STOCK WARNING"
+}
+
+let Product = Product { name: "Trail Shoes", price: 8500, stock: 10 }
+update Product.stock to 3
+update Product.stock to 0`,
+  };
+
+  function log(msg, cls = '') {
+    const div = document.createElement('div');
+    div.className = `output-line ${cls}`;
+    div.textContent = msg;
+    outputPanel.appendChild(div);
+    outputPanel.scrollTop = outputPanel.scrollHeight;
+  }
+
+  function clearOutput() { outputPanel.innerHTML = ''; }
+
+  function setStatus(msg, type = '') {
+    status.textContent = msg;
+    status.className = `status-bar ${type}`;
+  }
+
+  function renderState(stateJson) {
+    const state = JSON.parse(stateJson);
+    const instances = state.instances || {};
+    if (Object.keys(instances).length === 0) {
+      statePanel.innerHTML = '<div class="empty-state">No instances</div>';
+      return;
+    }
+    statePanel.innerHTML = '';
+    for (const [name, inst] of Object.entries(instances)) {
+      const block = document.createElement('div');
+      block.className = 'entity-block';
+      const header = document.createElement('div');
+      header.className = 'entity-name';
+      header.innerHTML = `<span>${name}</span><span class="entity-type">${inst.entity}</span>`;
+      block.appendChild(header);
+      for (const [field, value] of Object.entries(inst.fields || {})) {
+        const row = document.createElement('div');
+        row.className = 'field-row';
+        const fn_ = document.createElement('span');
+        fn_.className = 'field-name';
+        fn_.textContent = field;
+        const fv = document.createElement('span');
+        fv.className = 'field-value';
+        if (typeof value === 'boolean') {
+          fv.textContent = value.toString();
+          fv.classList.add(value ? 'bool-true' : 'bool-false');
+        } else if (typeof value === 'number') {
+          fv.textContent = value;
+          fv.classList.add('number');
+        } else {
+          fv.textContent = `"${value}"`;
+          fv.classList.add('text');
+        }
+        row.appendChild(fn_);
+        row.appendChild(fv);
+        block.appendChild(row);
+      }
+      statePanel.appendChild(block);
+    }
+  }
+
+  function run() {
+    clearOutput();
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+    const source = editor.value.trim();
+    if (!source) { log('No source code.', 'info'); return; }
+    setStatus('Running...', '');
+    try {
+      runtime = new LuminaRuntime(source);
+      // Get captured show output
+      const showOutput = runtime.get_output();
+      if (showOutput) {
+        for (const line of showOutput.split('\n')) {
+          if (line) log(line, 'show');
+        }
+      }
+      const stateJson = runtime.export_state();
+      renderState(stateJson);
+      const ver = JSON.parse(stateJson).version;
+      setStatus(`Done — version ${ver} · ${Object.keys(JSON.parse(stateJson).instances).length} instance(s)`, '');
+      log('✓ Program ran successfully.', 'info');
+      tickInterval = setInterval(() => {
+        if (!runtime) return;
+        try {
+          const result = runtime.tick();
+          if (result && result !== '[]') {
+            const events = JSON.parse(result);
+            for (const ev of events) log(`⚡ rule fired: ${ev.rule}`, 'event');
+            renderState(runtime.export_state());
+          }
+        } catch (e) { log(`Tick error: ${e}`, 'error'); }
+      }, 100);
+    } catch (e) {
+      setStatus('Error', 'error');
+      for (const l of e.toString().replace('Error: ', '').split('\n')) log(l, 'error');
+      runtime = null;
+    }
+  }
+
+  function check() {
+    clearOutput();
+    const source = editor.value.trim();
+    if (!source) { log('No source code.', 'info'); return; }
+    const errors = LuminaRuntime.check(source);
+    if (!errors) {
+      setStatus('No errors', '');
+      log('✓ No errors found.', 'show');
+    } else {
+      setStatus('Errors found', 'error');
+      for (const line of errors.split('\n')) log(line, 'error');
+    }
+  }
+
+  document.getElementById('btn-run').addEventListener('click', run);
+  document.getElementById('btn-check').addEventListener('click', check);
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    clearOutput();
+    statePanel.innerHTML = '<div class="empty-state">Run a program to see reactive state here</div>';
+    setStatus('Ready', 'idle');
+    runtime = null;
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+  });
+  document.querySelectorAll('.example-btn').forEach(btn => {
+    btn.addEventListener('click', () => { editor.value = EXAMPLES[btn.dataset.example] || ''; });
+  });
+  editor.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = editor.selectionStart;
+      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(editor.selectionEnd);
+      editor.selectionStart = editor.selectionEnd = start + 2;
+    }
+  });
+  editor.value = EXAMPLES.fleet;
+</script>
+</body>
+</html>

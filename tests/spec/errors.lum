@@ -1,0 +1,11 @@
+-- This file should fail analysis with known error codes
+
+entity Person {
+  age: Number
+  isAdult := age >= 18
+}
+
+rule "bad update" {
+  when true
+  then update Person.isAdult to false
+}

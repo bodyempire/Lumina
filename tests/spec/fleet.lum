@@ -1,0 +1,33 @@
+-- Lumina Fleet OS — end-to-end spec test
+
+entity Moto {
+  battery: Number
+  isBusy: Boolean
+  status: Text
+  isLowBattery := battery < 20
+  isCritical := battery < 5
+  isAvailable := not isBusy and battery > 15
+}
+
+entity Fleet {
+  name: Text
+}
+
+let Moto = Moto { battery: 80, isBusy: false, status: "available" }
+let Fleet = Fleet { name: "Kigali Fleet Alpha" }
+
+rule "low battery alert" {
+  when Moto.isLowBattery becomes true
+  then show "ALERT: battery low"
+}
+
+rule "critical battery" {
+  when Moto.isCritical becomes true
+  then update Moto.status to "maintenance"
+  then show "CRITICAL: Moto pulled from service"
+}
+
+update Moto.battery to 18
+update Moto.battery to 4
+show "Fleet: {Fleet.name}"
+show "Moto available: {Moto.isAvailable}"

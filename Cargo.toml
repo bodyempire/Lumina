@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lumina-lexer",
+    "crates/lumina-parser",
+    "crates/lumina-analyzer",
+    "crates/lumina-runtime",
+    "crates/lumina-ffi",
+    "crates/lumina-cli",
+    "crates/lumina-wasm",
+]

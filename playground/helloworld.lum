@@ -1,0 +1,6 @@
+show "lumina"
+
+rule "hello" {
+  when true
+  then show "hello"
+}

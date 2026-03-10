@@ -1,0 +1,8 @@
+[package]
+name = "lumina-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lumina-lexer = { path = "../lumina-lexer" }
+serde = { version = "1", features = ["derive"] }

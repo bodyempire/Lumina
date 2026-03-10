@@ -1,0 +1,11 @@
+[package]
+name = "lumina-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lumina-lexer = { path = "../lumina-lexer" }
+lumina-parser = { path = "../lumina-parser" }
+lumina-analyzer = { path = "../lumina-analyzer" }
+lumina-runtime = { path = "../lumina-runtime" }
+serde_json = "1"

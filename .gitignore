@@ -1,0 +1,16 @@
+# Build artifacts
+/target/
+/crates/lumina-wasm/pkg/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary
+/tmp/
+__pycache__/
