@@ -4,6 +4,7 @@ use lumina_parser::parse;
 use lumina_parser::ast::*;
 use lumina_analyzer::analyze;
 use lumina_runtime::engine::Evaluator;
+use lumina_diagnostics::DiagnosticRenderer;
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -22,12 +23,9 @@ impl LuminaRuntime {
         let program = parse(source)
             .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
-        let analyzed = analyze(program)
+        let analyzed = analyze(program, source, "<WASM>")
             .map_err(|errors| {
-                let msgs: Vec<String> = errors.iter()
-                    .map(|e| format!("[{}] {} (line {})", e.code, e.message, e.span.line))
-                    .collect();
-                JsValue::from_str(&msgs.join("\n"))
+                JsValue::from_str(&DiagnosticRenderer::render_all(&errors))
             })?;
 
         let mut rules = Vec::new();
@@ -108,11 +106,8 @@ impl LuminaRuntime {
     pub fn check(source: &str) -> String {
         match parse(source) {
             Err(e) => format!("Parse error: {e}"),
-            Ok(program) => match analyze(program) {
-                Err(errors) => errors.iter()
-                    .map(|e| format!("[{}] {} (line {})", e.code, e.message, e.span.line))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
+            Ok(program) => match analyze(program, source, "<WASM>") {
+                Err(errors) => DiagnosticRenderer::render_all(&errors),
                 Ok(_) => String::new(),
             }
         }

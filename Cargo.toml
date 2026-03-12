@@ -4,6 +4,7 @@ members = [
     "crates/lumina-lexer",
     "crates/lumina-parser",
     "crates/lumina-analyzer",
+    "crates/lumina-diagnostics",
     "crates/lumina-runtime",
     "crates/lumina-ffi",
     "crates/lumina-cli",

@@ -4,6 +4,7 @@ use lumina_parser::parse;
 use lumina_parser::ast::*;
 use lumina_analyzer::analyze;
 use lumina_runtime::engine::Evaluator;
+use lumina_diagnostics::DiagnosticRenderer;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -59,17 +60,15 @@ fn build_evaluator(analyzed: &lumina_analyzer::AnalyzedProgram) -> Evaluator {
 }
 
 fn cmd_run(args: &[String]) {
-    let (_, source) = read_file(args);
+    let (path, source) = read_file(args);
 
     let program = parse(&source).unwrap_or_else(|e| {
         eprintln!("Parse error: {e}");
         std::process::exit(1);
     });
 
-    let analyzed = analyze(program).unwrap_or_else(|errors| {
-        for e in &errors {
-            eprintln!("[{}] {} (line {})", e.code, e.message, e.span.line);
-        }
+    let analyzed = analyze(program, &source, &path).unwrap_or_else(|errors| {
+        eprintln!("{}", DiagnosticRenderer::render_all(&errors));
         std::process::exit(1);
     });
 
@@ -94,7 +93,7 @@ fn cmd_check(args: &[String]) {
         std::process::exit(1);
     });
 
-    match analyze(program) {
+    match analyze(program, &source, &path) {
         Ok(_) => {
             let basename = std::path::Path::new(&path)
                 .file_name().unwrap_or_default()
@@ -102,9 +101,7 @@ fn cmd_check(args: &[String]) {
             println!("✓ {} — no errors found", basename);
         }
         Err(errors) => {
-            for e in &errors {
-                eprintln!("[{}] {} (line {})", e.code, e.message, e.span.line);
-            }
+            eprintln!("{}", DiagnosticRenderer::render_all(&errors));
             std::process::exit(1);
         }
     }
@@ -145,11 +142,9 @@ fn cmd_repl() {
 
                 match parse(&accumulated_source) {
                     Err(e) => eprintln!("Parse error: {e}"),
-                    Ok(program) => match analyze(program) {
+                    Ok(program) => match analyze(program, &accumulated_source, "<repl>") {
                         Err(errors) => {
-                            for e in &errors {
-                                eprintln!("[{}] {}", e.code, e.message);
-                            }
+                            eprintln!("{}", DiagnosticRenderer::render_all(&errors));
                         }
                         Ok(analyzed) => {
                             let mut eval = build_evaluator(&analyzed);

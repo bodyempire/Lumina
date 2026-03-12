@@ -1,7 +1,7 @@
 use std::process::Command;
 
 fn lumina_bin() -> std::path::PathBuf {
-    let mut path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_lumina-cli"));
+    let path = std::path::PathBuf::from(env!("CARGO_BIN_EXE_lumina-cli"));
     path
 }
 
