@@ -1,17 +1,28 @@
-# Extended Backus-Naur Form (EBNF) Specification (v1.3)
+# Extended Backus-Naur Form (EBNF) Specification (v1.4)
 
-This document contains the complete formal language grammar of the Lumina programming language, conforming to version 1.3 specifications.
+This document contains the complete formal language grammar of the Lumina programming language, conforming to version 1.4 specifications.
 
 ## Global Program Structure
 ```ebnf
 program ::= statement* EOF
 
-statement ::= entity_decl
+statement ::= import_stmt
+            | fn_decl
+            | entity_decl
             | let_stmt
             | rule_decl
             | action_stmt
             | external_decl
             | NEWLINE
+```
+
+## Modules and Functions
+```ebnf
+import_stmt ::= 'import' STRING NEWLINE
+
+fn_decl ::= 'fn' IDENT '(' (fn_param (',' fn_param)*)? ')' '->' type '{' expr '}'
+
+fn_param ::= IDENT ':' type
 ```
 
 ## Entity and Composition Forms
@@ -90,15 +101,18 @@ unary_expr ::= '-' primary | primary
 primary ::= NUMBER | STRING | BOOL | IDENT | field_access
           | '(' expr ')'
           | if_expr
+          | call_expr
 
 if_expr ::= 'if' expr 'then' expr ('else' 'if' expr 'then' expr)* 'else' expr
 field_access ::= IDENT ('.' IDENT)+
+call_expr ::= IDENT '(' (expr (',' expr)*)? ')'
 cmp_op ::= '==' | '!=' | '>' | '<' | '>=' | '<='
 ```
 
 ## Token Terminals
 ```ebnf
-STRING ::= '"' (char | '{' expr '}')* '"'
+STRING ::= '"' (interpolated_content)* '"'
+interpolated_content ::= char | '{' expr '}'
 IDENT ::= LETTER (LETTER | DIGIT | '_')*
 NUMBER ::= DIGIT+ ('.' DIGIT+)?
 BOOL ::= 'true' | 'false'
