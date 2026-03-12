@@ -20,6 +20,7 @@ pub struct Evaluator {
     pub env:       HashMap<String, Value>,
     pub instances: HashMap<String, String>,
     pub derived_exprs: HashMap<(String, String), Expr>,
+    pub functions: HashMap<String, FnDecl>,
     pub timers:    TimerHeap,
     depth:         usize,
     fired_this_cycle: HashSet<String>,
@@ -37,6 +38,7 @@ impl Evaluator {
             env: HashMap::new(),
             instances: HashMap::new(),
             derived_exprs: HashMap::new(),
+            functions: HashMap::new(),
             timers,
             depth: 0,
             fired_this_cycle: HashSet::new(),
@@ -139,30 +141,7 @@ impl Evaluator {
 
                 let l = self.eval_expr(left, ctx)?;
                 let r = self.eval_expr(right, ctx)?;
-                match op {
-                    BinOp::Add => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)), _ => Ok(Value::Number(0.0)) },
-                    BinOp::Sub => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)), _ => Ok(Value::Number(0.0)) },
-                    BinOp::Mul => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)), _ => Ok(Value::Number(0.0)) },
-                    BinOp::Div => match (l, r) {
-                        (Value::Number(a), Value::Number(b)) => {
-                            if b == 0.0 { Err(RuntimeError::R002) } else { Ok(Value::Number(a / b)) }
-                        }
-                        _ => Ok(Value::Number(0.0)),
-                    },
-                    BinOp::Mod => match (l, r) {
-                        (Value::Number(a), Value::Number(b)) => {
-                            if b == 0.0 { Err(RuntimeError::R002) } else { Ok(Value::Number(a % b)) }
-                        }
-                        _ => Ok(Value::Number(0.0)),
-                    },
-                    BinOp::Eq => Ok(Value::Bool(l == r)),
-                    BinOp::Ne => Ok(Value::Bool(l != r)),
-                    BinOp::Gt  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a > b)),  _ => Ok(Value::Bool(false)) },
-                    BinOp::Lt  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a < b)),  _ => Ok(Value::Bool(false)) },
-                    BinOp::Ge  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a >= b)), _ => Ok(Value::Bool(false)) },
-                    BinOp::Le  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a <= b)), _ => Ok(Value::Bool(false)) },
-                    BinOp::And | BinOp::Or => unreachable!(),
-                }
+                self.apply_binop(op, l, r)
             }
 
             Expr::Unary { op, operand, .. } => {
@@ -194,6 +173,86 @@ impl Evaluator {
                 }
                 Ok(Value::Text(out))
             }
+
+            Expr::Call { name, args, .. } => {
+                let decl = self.functions.get(name)
+                    .ok_or(RuntimeError::R002)?
+                    .clone();
+                let arg_vals: Vec<Value> = args.iter()
+                    .map(|a| self.eval_expr(a, ctx))
+                    .collect::<Result<_, _>>()?;
+                let mut local: HashMap<String, Value> = HashMap::new();
+                for (param, val) in decl.params.iter().zip(arg_vals) {
+                    local.insert(param.name.clone(), val);
+                }
+                self.eval_expr_local(&decl.body, &local)
+            }
+        }
+    }
+
+    // ── Function evaluation ───────────────────────────────
+
+    fn apply_binop(&self, op: &BinOp, l: Value, r: Value) -> Result<Value, RuntimeError> {
+        match op {
+            BinOp::Add => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)), _ => Ok(Value::Number(0.0)) },
+            BinOp::Sub => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a - b)), _ => Ok(Value::Number(0.0)) },
+            BinOp::Mul => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a * b)), _ => Ok(Value::Number(0.0)) },
+            BinOp::Div => match (l, r) {
+                (Value::Number(a), Value::Number(b)) => {
+                    if b == 0.0 { Err(RuntimeError::R002) } else { Ok(Value::Number(a / b)) }
+                }
+                _ => Ok(Value::Number(0.0)),
+            },
+            BinOp::Mod => match (l, r) {
+                (Value::Number(a), Value::Number(b)) => {
+                    if b == 0.0 { Err(RuntimeError::R002) } else { Ok(Value::Number(a % b)) }
+                }
+                _ => Ok(Value::Number(0.0)),
+            },
+            BinOp::Eq => Ok(Value::Bool(l == r)),
+            BinOp::Ne => Ok(Value::Bool(l != r)),
+            BinOp::Gt  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a > b)),  _ => Ok(Value::Bool(false)) },
+            BinOp::Lt  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a < b)),  _ => Ok(Value::Bool(false)) },
+            BinOp::Ge  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a >= b)), _ => Ok(Value::Bool(false)) },
+            BinOp::Le  => match (l, r) { (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(a <= b)), _ => Ok(Value::Bool(false)) },
+            BinOp::And | BinOp::Or => unreachable!(),
+        }
+    }
+
+    fn eval_expr_local(&self, expr: &Expr, locals: &HashMap<String, Value>) -> Result<Value, RuntimeError> {
+        match expr {
+            Expr::Ident(name) => locals.get(name)
+                .cloned()
+                .ok_or(RuntimeError::R005 { instance: name.clone(), field: name.clone() }),
+            Expr::Number(n) => Ok(Value::Number(*n)),
+            Expr::Text(s) => Ok(Value::Text(s.clone())),
+            Expr::Bool(b) => Ok(Value::Bool(*b)),
+            Expr::Binary { op, left, right, .. } => {
+                if *op == BinOp::And {
+                    let l = self.eval_expr_local(left, locals)?;
+                    if l == Value::Bool(false) { return Ok(Value::Bool(false)); }
+                    let r = self.eval_expr_local(right, locals)?;
+                    return Ok(Value::Bool(r == Value::Bool(true)));
+                }
+                if *op == BinOp::Or {
+                    let l = self.eval_expr_local(left, locals)?;
+                    if l == Value::Bool(true) { return Ok(Value::Bool(true)); }
+                    let r = self.eval_expr_local(right, locals)?;
+                    return Ok(Value::Bool(r == Value::Bool(true)));
+                }
+                let l = self.eval_expr_local(left, locals)?;
+                let r = self.eval_expr_local(right, locals)?;
+                self.apply_binop(op, l, r)
+            }
+            Expr::If { cond, then_, else_, .. } => {
+                let c = self.eval_expr_local(cond, locals)?;
+                if c == Value::Bool(true) {
+                    self.eval_expr_local(then_, locals)
+                } else {
+                    self.eval_expr_local(else_, locals)
+                }
+            }
+            _ => Err(RuntimeError::R002), // unsupported expr in fn body
         }
     }
 
@@ -202,6 +261,10 @@ impl Evaluator {
     pub fn exec_statement(&mut self, stmt: &Statement) -> Result<(), RuntimeError> {
         match stmt {
             Statement::Entity(_) | Statement::ExternalEntity(_) | Statement::Rule(_) => Ok(()),
+            Statement::Fn(decl) => {
+                self.functions.insert(decl.name.clone(), decl.clone());
+                Ok(())
+            }
             Statement::Let(ls) => {
                 match &ls.value {
                     LetValue::Expr(expr) => {
@@ -558,7 +621,21 @@ mod tests {
         }
         let mut ev = Evaluator::new(analyzed.schema, analyzed.graph, rules);
         ev.derived_exprs = derived;
+        ev.functions = analyzed.fn_defs;
         ev
+    }
+
+    #[test]
+    fn test_function_evaluation() {
+        let source = "
+            fn double(x: Number) -> Number { x * 2 }
+            entity Math { val: Number res := double(val) }
+        ";
+        let mut ev = build_eval(source);
+        ev.store.insert("m1".to_string(), crate::store::Instance::new("Math", vec![("val".to_string(), Value::Number(10.0))].into_iter().collect()));
+        ev.propagate_derived("m1", "Math").unwrap();
+        let inst = ev.store.get("m1").unwrap();
+        assert_eq!(inst.get("res").unwrap(), &Value::Number(20.0));
     }
 
     #[test]

@@ -139,6 +139,7 @@ impl Parser {
             | Token::KwCreate | Token::KwDelete => {
                 Ok(Statement::Action(self.parse_action()?))
             }
+            Token::KwFn       => self.parse_fn_decl(),
             _ => Err(ParseError::new(
                 format!("unexpected token: {:?}", self.current()),
                 self.current_span(),
@@ -307,6 +308,37 @@ impl Parser {
         }
         self.expect(&Token::RBrace)?;
         Ok(EntityInit { entity_name, fields, span: start })
+    }
+
+    // ── function declaration ──────────────────────────────────────
+
+    fn parse_fn_decl(&mut self) -> Result<Statement, ParseError> {
+        let start = self.current_span();
+        self.expect(&Token::KwFn)?;
+        let name = self.expect_ident("function name")?;
+        self.expect(&Token::LParen)?;
+
+        let mut params = Vec::new();
+        while !self.check(&Token::RParen) {
+            let p_span = self.current_span();
+            let p_name = self.expect_ident("parameter name")?;
+            self.expect(&Token::Colon)?;
+            let p_type = self.parse_type()?;
+            params.push(FnParam { name: p_name, type_: p_type, span: p_span });
+            if !self.check(&Token::RParen) { self.expect(&Token::Comma)?; }
+        }
+        self.expect(&Token::RParen)?;
+        self.expect(&Token::Arrow)?; // "->"
+        let returns = self.parse_type()?;
+
+        self.expect(&Token::LBrace)?;
+        let body = self.parse_expr(0)?;
+        self.expect(&Token::RBrace)?;
+
+        Ok(Statement::Fn(FnDecl {
+            name, params, returns, body,
+            span: Span { start: start.start, end: self.current_span().end, line: start.line, col: start.col },
+        }))
     }
 
     // ── rule ──────────────────────────────────────────────
@@ -478,6 +510,20 @@ impl Parser {
             Token::Ident(ref name) => {
                 let name = name.clone();
                 self.advance();
+                
+                // If followed by "(", it's a function call
+                if self.check(&Token::LParen) {
+                    self.advance(); // consume "("
+                    let mut args = Vec::new();
+                    while !self.check(&Token::RParen) {
+                        args.push(self.parse_expr(0)?);
+                        if !self.check(&Token::RParen) { self.expect(&Token::Comma)?; }
+                    }
+                    self.expect(&Token::RParen)?;
+                    return Ok(Expr::Call { name, args, span });
+                }
+                
+                // Otherwise it's a plain identifier reference
                 Ok(Expr::Ident(name))
             }
             Token::LParen => {

@@ -17,12 +17,14 @@ pub struct AnalyzedProgram {
     pub program: Program,
     pub schema:  Schema,
     pub graph:   DependencyGraph,
+    pub fn_defs: HashMap<String, FnDecl>,
 }
 
 pub struct Analyzer {
     schema: Schema,
     graph:  DependencyGraph,
     errors: Vec<AnalyzerError>,
+    pub fn_defs: HashMap<String, FnDecl>,
 }
 
 impl Analyzer {
@@ -31,6 +33,7 @@ impl Analyzer {
             schema: Schema::new(),
             graph: DependencyGraph::new(),
             errors: Vec::new(),
+            fn_defs: HashMap::new(),
         }
     }
 
@@ -46,6 +49,7 @@ impl Analyzer {
             program,
             schema: self.schema,
             graph: self.graph,
+            fn_defs: self.fn_defs,
         })
     }
 
@@ -54,6 +58,17 @@ impl Analyzer {
             match stmt {
                 Statement::Entity(decl) => self.register_entity(decl, false),
                 Statement::ExternalEntity(decl) => self.register_external_entity(decl),
+                Statement::Fn(decl) => {
+                    if self.fn_defs.contains_key(&decl.name) {
+                        self.errors.push(AnalyzerError {
+                            code: "L011",
+                            message: format!("duplicate fn name: {}", decl.name),
+                            span: decl.span,
+                        });
+                    } else {
+                        self.fn_defs.insert(decl.name.clone(), decl.clone());
+                    }
+                }
                 _ => {}
             }
         }
@@ -155,7 +170,7 @@ impl Analyzer {
                 Statement::Entity(decl) => {
                     for field in &decl.fields {
                         if let Field::Derived(df) = field {
-                            let ty = self.infer_type(&df.expr, Some(&decl.name)).map_err(|e| vec![e])?;
+                            let ty = self.infer_type(&df.expr, Some(&decl.name), None).map_err(|e| vec![e])?;
                             if let Some(entity) = self.schema.entities.get_mut(&decl.name) {
                                 if let Some(f_schema) = entity.fields.get_mut(&df.name) {
                                     f_schema.ty = ty;
@@ -171,7 +186,7 @@ impl Analyzer {
                     // Type check condition
                     match &rule.trigger {
                         RuleTrigger::When(cond) => {
-                            let ty = self.infer_type(&cond.expr, None).map_err(|e| vec![e])?;
+                            let ty = self.infer_type(&cond.expr, None, None).map_err(|e| vec![e])?;
                             if ty != LuminaType::Boolean {
                                 return Err(vec![AnalyzerError {
                                     code: "L002",
@@ -180,7 +195,7 @@ impl Analyzer {
                                 }]);
                             }
                             if let Some(becomes) = &cond.becomes {
-                                let b_ty = self.infer_type(becomes, None).map_err(|e| vec![e])?;
+                                let b_ty = self.infer_type(becomes, None, None).map_err(|e| vec![e])?;
                                 if b_ty != LuminaType::Boolean {
                                     return Err(vec![AnalyzerError {
                                         code: "L002",
@@ -195,6 +210,25 @@ impl Analyzer {
                     // Type check actions
                     for action in &rule.actions {
                         self.check_action(action, rule.span)?;
+                    }
+                }
+                Statement::Fn(decl) => {
+                    let mut locals = HashMap::new();
+                    let mut locals_set = std::collections::HashSet::new();
+                    for param in &decl.params {
+                        locals.insert(param.name.clone(), param.type_.clone());
+                        locals_set.insert(param.name.clone());
+                    }
+                    self.check_fn_body(&decl.body, &locals_set, decl.span);
+
+                    if let Ok(body_type) = self.infer_type(&decl.body, None, Some(&locals)) {
+                        if body_type != decl.returns {
+                            self.errors.push(AnalyzerError {
+                                code: "L014",
+                                message: "return type mismatch".to_string(),
+                                span: decl.span,
+                            });
+                        }
                     }
                 }
                 _ => {}
@@ -217,12 +251,65 @@ impl Analyzer {
         }
     }
 
-    fn infer_type(&self, expr: &Expr, entity_ctx: Option<&str>) -> Result<LuminaType, AnalyzerError> {
+    fn check_fn_body(&mut self, expr: &Expr, locals: &std::collections::HashSet<String>, span: Span) {
+        match expr {
+            Expr::FieldAccess { obj, .. } => {
+                if let Expr::Ident(ref name) = **obj {
+                    if !locals.contains(name) {
+                        self.errors.push(AnalyzerError {
+                            code: "L015",
+                            message: "fn body cannot access entity fields".to_string(),
+                            span,
+                        });
+                    }
+                } else {
+                    self.errors.push(AnalyzerError {
+                        code: "L015",
+                        message: "fn body cannot access entity fields".to_string(),
+                        span,
+                    });
+                }
+                self.check_fn_body(obj, locals, span);
+            }
+            Expr::Binary { left, right, .. } => {
+                self.check_fn_body(left, locals, span);
+                self.check_fn_body(right, locals, span);
+            }
+            Expr::Unary { operand, .. } => {
+                self.check_fn_body(operand, locals, span);
+            }
+            Expr::If { cond, then_, else_, .. } => {
+                self.check_fn_body(cond, locals, span);
+                self.check_fn_body(then_, locals, span);
+                self.check_fn_body(else_, locals, span);
+            }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.check_fn_body(arg, locals, span);
+                }
+            }
+            Expr::Interpolated { segments, .. } => {
+                for seg in segments {
+                    if let Segment::Expr(e) = seg {
+                        self.check_fn_body(e, locals, span);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn infer_type(&self, expr: &Expr, entity_ctx: Option<&str>, locals: Option<&HashMap<String, LuminaType>>) -> Result<LuminaType, AnalyzerError> {
         match expr {
             Expr::Number(_) => Ok(LuminaType::Number),
             Expr::Text(_) | Expr::Interpolated { .. } => Ok(LuminaType::Text),
             Expr::Bool(_) => Ok(LuminaType::Boolean),
             Expr::Ident(name) => {
+                if let Some(locs) = locals {
+                    if let Some(ty) = locs.get(name) {
+                        return Ok(ty.clone());
+                    }
+                }
                 // First check if it's a field in the current entity context
                 if let Some(ent) = entity_ctx {
                     if let Some(f) = self.schema.get_field(ent, name) {
@@ -241,7 +328,7 @@ impl Analyzer {
                 }
             }
             Expr::FieldAccess { obj, field, span } => {
-                let obj_ty = self.infer_type(obj, entity_ctx)?;
+                let obj_ty = self.infer_type(obj, entity_ctx, locals)?;
                 match obj_ty {
                     LuminaType::Entity(e_name) => {
                         if let Some(f) = self.schema.get_field(&e_name, field) {
@@ -262,8 +349,8 @@ impl Analyzer {
                 }
             }
             Expr::Binary { op, left, right, span } => {
-                let l_ty = self.infer_type(left, entity_ctx)?;
-                let r_ty = self.infer_type(right, entity_ctx)?;
+                let l_ty = self.infer_type(left, entity_ctx, locals)?;
+                let r_ty = self.infer_type(right, entity_ctx, locals)?;
                 match op {
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                         if l_ty == LuminaType::Number && r_ty == LuminaType::Number {
@@ -301,7 +388,7 @@ impl Analyzer {
                 }
             }
             Expr::Unary { op, operand, span } => {
-                let ty = self.infer_type(operand, entity_ctx)?;
+                let ty = self.infer_type(operand, entity_ctx, locals)?;
                 match op {
                     UnOp::Neg => {
                         if ty == LuminaType::Number {
@@ -328,7 +415,7 @@ impl Analyzer {
                 }
             }
             Expr::If { cond, then_, else_, span } => {
-                let c_ty = self.infer_type(cond, entity_ctx)?;
+                let c_ty = self.infer_type(cond, entity_ctx, locals)?;
                 if c_ty != LuminaType::Boolean {
                     return Err(AnalyzerError {
                         code: "L002",
@@ -336,8 +423,8 @@ impl Analyzer {
                         span: *span,
                     });
                 }
-                let t_ty = self.infer_type(then_, entity_ctx)?;
-                let e_ty = self.infer_type(else_, entity_ctx)?;
+                let t_ty = self.infer_type(then_, entity_ctx, locals)?;
+                let e_ty = self.infer_type(else_, entity_ctx, locals)?;
                 if t_ty == e_ty {
                     Ok(t_ty)
                 } else {
@@ -347,6 +434,36 @@ impl Analyzer {
                         span: *span,
                     })
                 }
+            }
+            Expr::Call { name, args, span } => {
+                let decl = match self.fn_defs.get(name) {
+                    Some(d) => d.clone(),
+                    None => {
+                        return Err(AnalyzerError {
+                            code: "L012",
+                            message: format!("unknown fn: {}", name),
+                            span: *span,
+                        });
+                    }
+                };
+                if args.len() != decl.params.len() {
+                    return Err(AnalyzerError {
+                        code: "L013",
+                        message: format!("fn {} expects {} args, got {}", name, decl.params.len(), args.len()),
+                        span: *span,
+                    });
+                }
+                for (arg, param) in args.iter().zip(decl.params.iter()) {
+                    let arg_ty = self.infer_type(arg, entity_ctx, locals)?;
+                    if arg_ty != param.type_ {
+                        return Err(AnalyzerError {
+                            code: "L013",
+                            message: format!("argument type mismatch for parameter {}", param.name),
+                            span: *span,
+                        });
+                    }
+                }
+                Ok(decl.returns.clone())
             }
         }
     }
@@ -361,7 +478,7 @@ impl Analyzer {
                 }
             }
             Expr::FieldAccess { obj, field, .. } => {
-                let obj_ty = self.infer_type(obj, Some(entity_name)).map_err(|e| vec![e])?;
+                let obj_ty = self.infer_type(obj, Some(entity_name), None).map_err(|e| vec![e])?;
                 if let LuminaType::Entity(e_name) = obj_ty {
                     let dep_id = self.graph.intern(&e_name, field);
                     self.graph.add_edge(dep_id, target_id);
@@ -387,6 +504,11 @@ impl Analyzer {
                     }
                 }
             }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.collect_dependencies(arg, entity_name, target_id)?;
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -395,7 +517,7 @@ impl Analyzer {
     fn check_action(&mut self, action: &Action, rule_span: Span) -> Result<(), Vec<AnalyzerError>> {
         match action {
             Action::Show(expr) => {
-                self.infer_type(expr, None).map_err(|e| vec![e])?;
+                self.infer_type(expr, None, None).map_err(|e| vec![e])?;
                 Ok(())
             }
             Action::Update { target, value } => {
@@ -413,7 +535,7 @@ impl Analyzer {
                     }]);
                 }
 
-                let val_ty = self.infer_type(value, None).map_err(|e| vec![e])?;
+                let val_ty = self.infer_type(value, None, None).map_err(|e| vec![e])?;
                 if val_ty != field_schema.ty {
                     return Err(vec![AnalyzerError {
                         code: "L002",
@@ -438,7 +560,7 @@ impl Analyzer {
                         span: rule_span,
                     }])?;
 
-                    let ty = self.infer_type(expr, None).map_err(|e| vec![e])?;
+                    let ty = self.infer_type(expr, None, None).map_err(|e| vec![e])?;
                     if ty != field_schema.ty {
                         return Err(vec![AnalyzerError {
                             code: "L002",

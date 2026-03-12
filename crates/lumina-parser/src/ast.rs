@@ -16,6 +16,25 @@ pub enum Statement {
     Let(LetStmt),
     Rule(RuleDecl),
     Action(Action),
+    Fn(FnDecl),
+}
+
+// ── Function declaration ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FnDecl {
+    pub name:    String,
+    pub params:  Vec<FnParam>,
+    pub returns: LuminaType,
+    pub body:    Expr,
+    pub span:    Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FnParam {
+    pub name:  String,
+    pub type_: LuminaType,
+    pub span:  Span,
 }
 
 // ── Entity declaration ─────────────────────────────────────────────────────
@@ -209,6 +228,11 @@ pub enum Expr {
     Interpolated {
         segments: Vec<Segment>,
         span:     Span,
+    },
+    Call {
+        name: String,
+        args: Vec<Expr>,
+        span: Span,
     },
 }
 

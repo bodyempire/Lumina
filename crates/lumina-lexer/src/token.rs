@@ -30,6 +30,7 @@ pub enum Token {
     #[token("Text")]     KwTypeText,
     #[token("Number")]   KwTypeNumber,
     #[token("Boolean")]  KwTypeBoolean,
+    #[token("fn")]       KwFn,
 
     // ── Operators & punctuation ────────────────────────────
     #[token(":=")]  ColonEq,
@@ -52,6 +53,7 @@ pub enum Token {
     #[token(",")]   Comma,
     #[token(".")]   Dot,
     #[token("@")]   At,
+    #[token("->")]  Arrow,
 
     // ── Literals ───────────────────────────────────────────
     #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse::<f64>().ok())]
