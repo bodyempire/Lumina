@@ -515,7 +515,36 @@ impl Parser {
             Token::Text(ref s) => {
                 let s = s.clone();
                 self.advance();
-                self.parse_text_or_interpolated(&s, span)
+                Ok(Expr::Text(s))
+            }
+            Token::InterpStringStart => {
+                self.advance();
+                let mut segments = Vec::new();
+                loop {
+                    match self.current().clone() {
+                        Token::InterpPart(s) => {
+                            segments.push(StringSegment::Literal(s));
+                            self.advance();
+                        }
+                        Token::InterpExprStart => {
+                            self.advance();
+                            let expr = self.parse_expr(0)?;
+                            self.expect(&Token::InterpExprEnd)?;
+                            segments.push(StringSegment::Expr(Box::new(expr)));
+                        }
+                        Token::InterpStringEnd => {
+                            self.advance();
+                            break;
+                        }
+                        other => {
+                            return Err(ParseError::new(
+                                format!("unexpected token in interpolated string: {:?}", other),
+                                self.current_span(),
+                            ));
+                        }
+                    }
+                }
+                Ok(Expr::InterpolatedString(segments))
             }
             Token::KwTrue  => { self.advance(); Ok(Expr::Bool(true)) }
             Token::KwFalse => { self.advance(); Ok(Expr::Bool(false)) }
@@ -575,57 +604,6 @@ impl Parser {
                 span,
             )),
         }
-    }
-
-    // ── text interpolation ────────────────────────────────
-
-    fn parse_text_or_interpolated(&self, s: &str, span: Span) -> Result<Expr, ParseError> {
-        if !s.contains('{') {
-            return Ok(Expr::Text(s.to_string()));
-        }
-        let mut segments = vec![];
-        let mut literal = String::new();
-        let mut chars = s.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if ch == '{' {
-                if !literal.is_empty() {
-                    segments.push(Segment::Literal(std::mem::take(&mut literal)));
-                }
-                let mut expr_str = String::new();
-                let mut closed = false;
-                for c in chars.by_ref() {
-                    if c == '}' { closed = true; break; }
-                    expr_str.push(c);
-                }
-                if !closed {
-                    return Err(ParseError::new(
-                        "unclosed string interpolation '{', expected '}'".to_string(),
-                        span,
-                    ));
-                }
-                let trimmed = expr_str.trim();
-                if trimmed.contains('.') {
-                    let parts: Vec<&str> = trimmed.split('.').collect();
-                    let mut expr = Expr::Ident(parts[0].to_string());
-                    for part in &parts[1..] {
-                        expr = Expr::FieldAccess {
-                            obj: Box::new(expr),
-                            field: part.to_string(),
-                            span: Span::default(),
-                        };
-                    }
-                    segments.push(Segment::Expr(expr));
-                } else {
-                    segments.push(Segment::Expr(Expr::Ident(trimmed.to_string())));
-                }
-            } else {
-                literal.push(ch);
-            }
-        }
-        if !literal.is_empty() {
-            segments.push(Segment::Literal(literal));
-        }
-        Ok(Expr::Interpolated { segments, span })
     }
 
     // ── convenience extractors ────────────────────────────

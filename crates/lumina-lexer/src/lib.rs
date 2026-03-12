@@ -26,7 +26,7 @@ impl std::error::Error for LexError {}
 ///
 /// Returns `Err(LexError)` on the first unrecognised character, with
 /// line and column information for diagnostics.
-pub fn tokenize(source: &str) -> Result<Vec<SpannedToken>, LexError> {
+fn lex_raw(source: &str) -> Result<Vec<SpannedToken>, LexError> {
     let mut lexer = Token::lexer(source);
     let mut tokens = Vec::new();
     let mut line: u32 = 1;
@@ -99,6 +99,84 @@ pub fn tokenize(source: &str) -> Result<Vec<SpannedToken>, LexError> {
     }
 
     Ok(tokens)
+}
+
+/// Tokenize a Lumina source string, expanding any interpolated strings.
+pub fn tokenize(source: &str) -> Result<Vec<SpannedToken>, LexError> {
+    let raw = lex_raw(source)?;
+    Ok(expand_interpolations(raw))
+}
+
+fn expand_interpolations(tokens: Vec<SpannedToken>) -> Vec<SpannedToken> {
+    let mut out = Vec::new();
+    for tok in tokens {
+        if let Token::Text(ref s) = tok.token {
+            if s.contains('{') {
+                // Split into interpolation token sequence
+                out.extend(split_interpolated(s, tok.span));
+                continue;
+            }
+        }
+        out.push(tok);
+    }
+    out
+}
+
+fn split_interpolated(s: &str, base_span: Span) -> Vec<SpannedToken> {
+    let mut result = Vec::new();
+    // Shorthand to create a SpannedToken with the same span as the parent string literal
+    let spanned = |token| SpannedToken { token, span: base_span };
+
+    result.push(spanned(Token::InterpStringStart));
+    
+    let mut chars = s.chars().peekable();
+    let mut literal = String::new();
+    
+    while let Some(ch) = chars.next() {
+        match ch {
+            '{' if chars.peek() == Some(&'{') => {
+                chars.next(); literal.push('{'); // {{ -> {
+            }
+            '}' if chars.peek() == Some(&'}') => {
+                chars.next(); literal.push('}'); // }} -> }
+            }
+            '{' => {
+                if !literal.is_empty() {
+                    result.push(spanned(Token::InterpPart(literal.clone())));
+                    literal.clear();
+                }
+                result.push(spanned(Token::InterpExprStart));
+                
+                // Collect until matching }
+                let mut expr_src = String::new();
+                let mut depth = 1;
+                while let Some(ch2) = chars.next() {
+                    if ch2 == '{' { depth += 1; }
+                    if ch2 == '}' { 
+                        depth -= 1; 
+                        if depth == 0 { break; } 
+                    }
+                    expr_src.push(ch2);
+                }
+                
+                // Re-tokenize the expression inside {}
+                if let Ok(inner) = lex_raw(&expr_src) {
+                    // Note: In a production compiler, we would offset these spans
+                    // to point into the original file. For v1.4, we use the base_span.
+                    result.extend(inner);
+                }
+                result.push(spanned(Token::InterpExprEnd));
+            }
+            c => literal.push(c),
+        }
+    }
+    
+    if !literal.is_empty() {
+        result.push(spanned(Token::InterpPart(literal)));
+    }
+    
+    result.push(spanned(Token::InterpStringEnd));
+    result
 }
 
 #[cfg(test)]

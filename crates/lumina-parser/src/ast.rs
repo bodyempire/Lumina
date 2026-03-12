@@ -240,10 +240,7 @@ pub enum Expr {
         else_: Box<Expr>,
         span:  Span,
     },
-    Interpolated {
-        segments: Vec<Segment>,
-        span:     Span,
-    },
+    InterpolatedString(Vec<StringSegment>),
     Call {
         name: String,
         args: Vec<Expr>,
@@ -252,9 +249,9 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Segment {
+pub enum StringSegment {
     Literal(String),
-    Expr(Expr),
+    Expr(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

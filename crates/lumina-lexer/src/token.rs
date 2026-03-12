@@ -66,6 +66,13 @@ pub enum Token {
     })]
     Text(String),
 
+    // ── Interpolation (post-processed) ─────────────────────
+    InterpStringStart,
+    InterpPart(String),
+    InterpExprStart,
+    InterpExprEnd,
+    InterpStringEnd,
+
     // ── Identifiers ────────────────────────────────────────
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),

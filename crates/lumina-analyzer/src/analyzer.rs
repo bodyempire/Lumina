@@ -301,9 +301,9 @@ impl Analyzer {
                     self.check_fn_body(arg, locals, span);
                 }
             }
-            Expr::Interpolated { segments, .. } => {
+            Expr::InterpolatedString(segments) => {
                 for seg in segments {
-                    if let Segment::Expr(e) = seg {
+                    if let StringSegment::Expr(e) = seg {
                         self.check_fn_body(e, locals, span);
                     }
                 }
@@ -315,7 +315,7 @@ impl Analyzer {
     fn infer_type(&self, expr: &Expr, entity_ctx: Option<&str>, locals: Option<&HashMap<String, LuminaType>>) -> Result<LuminaType, AnalyzerError> {
         match expr {
             Expr::Number(_) => Ok(LuminaType::Number),
-            Expr::Text(_) | Expr::Interpolated { .. } => Ok(LuminaType::Text),
+            Expr::Text(_) | Expr::InterpolatedString(_) => Ok(LuminaType::Text),
             Expr::Bool(_) => Ok(LuminaType::Boolean),
             Expr::Ident(name) => {
                 if let Some(locs) = locals {
@@ -510,9 +510,9 @@ impl Analyzer {
                 self.collect_dependencies(then_, entity_name, target_id)?;
                 self.collect_dependencies(else_, entity_name, target_id)?;
             }
-            Expr::Interpolated { segments, .. } => {
+            Expr::InterpolatedString(segments) => {
                 for seg in segments {
-                    if let Segment::Expr(e) = seg {
+                    if let StringSegment::Expr(e) = seg {
                         self.collect_dependencies(e, entity_name, target_id)?;
                     }
                 }

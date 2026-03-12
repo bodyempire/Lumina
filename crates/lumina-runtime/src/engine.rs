@@ -123,12 +123,12 @@ impl Evaluator {
                 }
             }
 
-            Expr::Interpolated { segments, .. } => {
+            Expr::InterpolatedString(segments) => {
                 let mut out = String::new();
                 for seg in segments {
                     match seg {
-                        Segment::Literal(s) => out.push_str(s),
-                        Segment::Expr(e) => {
+                        StringSegment::Literal(s) => out.push_str(s),
+                        StringSegment::Expr(e) => {
                             let v = self.eval_expr(e, ctx)?;
                             out.push_str(&v.to_string());
                         }
@@ -214,6 +214,19 @@ impl Evaluator {
                 } else {
                     self.eval_expr_local(else_, locals)
                 }
+            }
+            Expr::InterpolatedString(segments) => {
+                let mut out = String::new();
+                for seg in segments {
+                    match seg {
+                        StringSegment::Literal(s) => out.push_str(s),
+                        StringSegment::Expr(e) => {
+                            let v = self.eval_expr_local(e, locals)?;
+                            out.push_str(&v.to_string());
+                        }
+                    }
+                }
+                Ok(Value::Text(out))
             }
             _ => Err(RuntimeError::R002), // unsupported expr in fn body
         }
@@ -636,16 +649,13 @@ mod tests {
         let mut ev = empty_eval();
         ev.env.insert("name".into(), Value::Text("Isaac".into()));
         ev.env.insert("age".into(), Value::Number(26.0));
-        let expr = Expr::Interpolated {
-            segments: vec![
-                Segment::Literal("Hello ".into()),
-                Segment::Expr(Expr::Ident("name".into())),
-                Segment::Literal(", you are ".into()),
-                Segment::Expr(Expr::Ident("age".into())),
-                Segment::Literal(" years old".into()),
-            ],
-            span: Span::default(),
-        };
+        let expr = Expr::InterpolatedString(vec![
+            StringSegment::Literal("Hello ".into()),
+            StringSegment::Expr(Box::new(Expr::Ident("name".into()))),
+            StringSegment::Literal(", you are ".into()),
+            StringSegment::Expr(Box::new(Expr::Ident("age".into()))),
+            StringSegment::Literal(" years old".into()),
+        ]);
         assert_eq!(
             ev.eval_expr(&expr, None).unwrap(),
             Value::Text("Hello Isaac, you are 26 years old".into())
