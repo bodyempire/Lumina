@@ -41,6 +41,7 @@ fn help_for_code(code: &str) -> Option<String> {
         "L008" => Some("add a let binding for the instance before using it".into()),
         "L009" => Some("instance names must be globally unique".into()),
         "L010" => Some("@affects only applies to stored fields".into()),
+        "R004" => Some("check the list is non-empty and the index is within range".into()),
         _ => None,
     }
 }

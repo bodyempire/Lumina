@@ -55,6 +55,8 @@ pub enum Token {
     #[token(".")]   Dot,
     #[token("@")]   At,
     #[token("->")]  Arrow,
+    #[token("[")]   LBracket,
+    #[token("]")]   RBracket,
 
     // ── Literals ───────────────────────────────────────────
     #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse::<f64>().ok())]

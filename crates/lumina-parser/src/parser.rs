@@ -227,7 +227,7 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<LuminaType, ParseError> {
-        let t = match self.current() {
+        let base = match self.current() {
             Token::KwTypeText    => { self.advance(); LuminaType::Text }
             Token::KwTypeNumber  => { self.advance(); LuminaType::Number }
             Token::KwTypeBoolean => { self.advance(); LuminaType::Boolean }
@@ -237,7 +237,13 @@ impl Parser {
             }
             _ => return Err(ParseError::new("expected type", self.current_span())),
         };
-        Ok(t)
+        // Check for [] suffix — makes it a list type
+        if !self.is_at_end() && self.check(&Token::LBracket) {
+            self.advance(); // [
+            self.expect(&Token::RBracket)?; // ]
+            return Ok(LuminaType::List(Box::new(base)));
+        }
+        Ok(base)
     }
 
     // ── external entity ───────────────────────────────────
@@ -344,7 +350,9 @@ impl Parser {
         let returns = self.parse_type()?;
 
         self.expect(&Token::LBrace)?;
+        self.skip_newlines();
         let body = self.parse_expr(0)?;
+        self.skip_newlines();
         self.expect(&Token::RBrace)?;
 
         Ok(Statement::Fn(FnDecl {
@@ -501,6 +509,18 @@ impl Parser {
                 break;
             }
         }
+        // Postfix index access: expr[index]
+        while !self.is_at_end() && self.check(&Token::LBracket) {
+            let span = self.current_span();
+            self.advance(); // [
+            let index = self.parse_expr(0)?;
+            self.expect(&Token::RBracket)?; // ]
+            lhs = Expr::Index {
+                list: Box::new(lhs),
+                index: Box::new(index),
+                span,
+            };
+        }
         Ok(lhs)
     }
 
@@ -587,10 +607,15 @@ impl Parser {
             }
             Token::KwIf => {
                 self.advance();
+                self.skip_newlines();
                 let cond = self.parse_expr(0)?;
+                self.skip_newlines();
                 self.expect(&Token::KwThen)?;
+                self.skip_newlines();
                 let then_ = self.parse_expr(0)?;
+                self.skip_newlines();
                 self.expect(&Token::KwElse)?;
+                self.skip_newlines();
                 let else_ = self.parse_expr(0)?;
                 Ok(Expr::If {
                     cond: Box::new(cond),
@@ -598,6 +623,16 @@ impl Parser {
                     else_: Box::new(else_),
                     span,
                 })
+            }
+            Token::LBracket => {
+                self.advance(); // [
+                let mut elems = Vec::new();
+                while !self.check(&Token::RBracket) && !self.is_at_end() {
+                    elems.push(self.parse_expr(0)?);
+                    if !self.check(&Token::RBracket) { self.expect(&Token::Comma)?; }
+                }
+                self.expect(&Token::RBracket)?; // ]
+                Ok(Expr::ListLiteral(elems))
             }
             _ => Err(ParseError::new(
                 format!("unexpected token in expression: {:?}", tok),

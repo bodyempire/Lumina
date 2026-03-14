@@ -1,0 +1,16 @@
+-- tests/spec/lists.lum — List types integration test
+
+let scores = [80, 60, 40, 20]
+
+show "Scores: {scores}"
+show "Length: {len(scores)}"
+show "Min: {min(scores)}"
+show "Max: {max(scores)}"
+show "Sum: {sum(scores)}"
+show "Head: {head(scores)}"
+show "Tail: {tail(scores)}"
+show "At index 2: {at(scores, 2)}"
+
+let extended = append(scores, 100)
+show "Extended: {extended}"
+show "Extended length: {len(extended)}"

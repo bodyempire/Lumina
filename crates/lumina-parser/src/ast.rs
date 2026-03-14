@@ -100,6 +100,7 @@ pub enum LuminaType {
     Number,
     Boolean,
     Entity(String),
+    List(Box<LuminaType>),
 }
 
 // ── External entity ────────────────────────────────────────────────────────
@@ -245,6 +246,12 @@ pub enum Expr {
         name: String,
         args: Vec<Expr>,
         span: Span,
+    },
+    ListLiteral(Vec<Expr>),
+    Index {
+        list:  Box<Expr>,
+        index: Box<Expr>,
+        span:  Span,
     },
 }
 
