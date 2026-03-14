@@ -176,6 +176,53 @@ impl Evaluator {
             }
 
             Expr::Call { name, args, .. } => {
+                // Built-in list functions (checked before user fn_defs)
+                match name.as_str() {
+                    "len" => {
+                        let list = self.eval_to_list(&args[0], ctx)?;
+                        return Ok(Value::Number(list.len() as f64));
+                    }
+                    "min" => {
+                        let list = self.eval_to_num_list(&args[0], ctx)?;
+                        if list.is_empty() { return Err(RuntimeError::R004 { index: 0, len: 0 }); }
+                        return Ok(Value::Number(list.iter().cloned().fold(f64::INFINITY, f64::min)));
+                    }
+                    "max" => {
+                        let list = self.eval_to_num_list(&args[0], ctx)?;
+                        if list.is_empty() { return Err(RuntimeError::R004 { index: 0, len: 0 }); }
+                        return Ok(Value::Number(list.iter().cloned().fold(f64::NEG_INFINITY, f64::max)));
+                    }
+                    "sum" => {
+                        let list = self.eval_to_num_list(&args[0], ctx)?;
+                        return Ok(Value::Number(list.iter().sum()));
+                    }
+                    "append" => {
+                        let mut list = self.eval_to_list(&args[0], ctx)?;
+                        let val = self.eval_expr(&args[1], ctx)?;
+                        list.push(val);
+                        return Ok(Value::List(list));
+                    }
+                    "head" => {
+                        let list = self.eval_to_list(&args[0], ctx)?;
+                        if list.is_empty() { return Err(RuntimeError::R004 { index: 0, len: 0 }); }
+                        return Ok(list[0].clone());
+                    }
+                    "tail" => {
+                        let list = self.eval_to_list(&args[0], ctx)?;
+                        if list.is_empty() { return Err(RuntimeError::R004 { index: 0, len: 0 }); }
+                        return Ok(Value::List(list[1..].to_vec()));
+                    }
+                    "at" => {
+                        let list = self.eval_to_list(&args[0], ctx)?;
+                        let idx = self.eval_expr(&args[1], ctx)?.as_number()
+                            .ok_or(RuntimeError::R002)? as usize;
+                        if idx >= list.len() {
+                            return Err(RuntimeError::R004 { index: idx, len: list.len() });
+                        }
+                        return Ok(list[idx].clone());
+                    }
+                    _ => {} // Fall through to user-defined fn lookup
+                }
                 let decl = self.functions.get(name)
                     .ok_or(RuntimeError::R002)?
                     .clone();
@@ -187,6 +234,21 @@ impl Evaluator {
                     local.insert(param.name.clone(), val);
                 }
                 self.eval_expr_local(&decl.body, &local)
+            }
+            Expr::ListLiteral(elems) => {
+                let vals: Vec<Value> = elems.iter()
+                    .map(|e| self.eval_expr(e, ctx))
+                    .collect::<Result<_, _>>()?;
+                Ok(Value::List(vals))
+            }
+            Expr::Index { list, index, .. } => {
+                let list_val = self.eval_to_list(list, ctx)?;
+                let idx = self.eval_expr(index, ctx)?.as_number()
+                    .ok_or(RuntimeError::R002)? as usize;
+                if idx >= list_val.len() {
+                    return Err(RuntimeError::R004 { index: idx, len: list_val.len() });
+                }
+                Ok(list_val[idx].clone())
             }
         }
     }
@@ -265,6 +327,25 @@ impl Evaluator {
                     }
                 }
                 Ok(Value::Text(out))
+            }
+            Expr::ListLiteral(elems) => {
+                let vals: Vec<Value> = elems.iter()
+                    .map(|e| self.eval_expr_local(e, locals))
+                    .collect::<Result<_, _>>()?;
+                Ok(Value::List(vals))
+            }
+            Expr::Index { list, index, .. } => {
+                let list_val = self.eval_expr_local(list, locals)?;
+                let items = match list_val {
+                    Value::List(l) => l,
+                    _ => return Err(RuntimeError::R002),
+                };
+                let idx = self.eval_expr_local(index, locals)?.as_number()
+                    .ok_or(RuntimeError::R002)? as usize;
+                if idx >= items.len() {
+                    return Err(RuntimeError::R004 { index: idx, len: items.len() });
+                }
+                Ok(items[idx].clone())
             }
             _ => Err(RuntimeError::R002), // unsupported expr in fn body
         }
@@ -393,53 +474,7 @@ impl Evaluator {
         }
 
         // Evaluate rules
-        let mut all_events = Vec::new();
-        let rules_clone = self.rules.clone();
-        for rule in &rules_clone {
-            if let RuleTrigger::When(condition) = &rule.trigger {
-                match rules::condition_is_met(self, condition, instance_name) {
-                    Ok(true) => {
-                        let fire_key = format!("{}::{}", rule.name, instance_name);
-                        if self.fired_this_cycle.contains(&fire_key) {
-                            // Already fired in this cycle, skip
-                            continue;
-                        }
-                        if let Some(dur) = &condition.for_duration {
-                            let _ = self.timers.start_for_timer(
-                                &rule.name, instance_name, dur.to_seconds(),
-                            );
-                        } else {
-                            self.fired_this_cycle.insert(fire_key);
-                            for action in &rule.actions {
-                                match self.exec_action(action) {
-                                    Ok(evts) => all_events.extend(evts),
-                                    Err(e) => {
-                                        let snap = self.snapshots.pop().unwrap();
-                                        self.store = snap.store;
-                                        self.depth -= 1;
-                                        return Err(e);
-                                    }
-                                }
-                            }
-                            all_events.push(FiredEvent {
-                                rule: rule.name.clone(),
-                                instance: instance_name.to_string(),
-                            });
-                        }
-                    }
-                    Ok(false) => {
-                        // Condition not met — cancel any pending for-timer
-                        self.timers.cancel_for_timer(&rule.name, instance_name);
-                    }
-                    Err(e) => {
-                        let snap = self.snapshots.pop().unwrap();
-                        self.store = snap.store;
-                        self.depth -= 1;
-                        return Err(e);
-                    }
-                }
-            }
-        }
+        let all_events = self.evaluate_rules(instance_name)?;
 
         // Only commit at outermost level to prevent re-triggering becomes
         if self.depth == 1 {
@@ -449,6 +484,54 @@ impl Evaluator {
         self.snapshots.pop();
         self.depth -= 1;
         Ok(all_events)
+    }
+
+    fn evaluate_rules(&mut self, instance_name: &str) -> Result<Vec<FiredEvent>, RuntimeError> {
+        let mut all_events = Vec::new();
+        let rules_clone = self.rules.clone();
+        for rule in &rules_clone {
+            if let RuleTrigger::When(condition) = &rule.trigger {
+                match rules::condition_is_met(self, condition, instance_name) {
+                    Ok(true) => {
+                        let fire_key = format!("{}::{}", rule.name, instance_name);
+                        if self.fired_this_cycle.contains(&fire_key) {
+                            continue;
+                        }
+                        if let Some(dur) = &condition.for_duration {
+                            let _ = self.timers.start_for_timer(
+                                &rule.name, instance_name, dur.to_seconds(),
+                            );
+                        } else {
+                            self.fired_this_cycle.insert(fire_key);
+                            for action in &rule.actions {
+                                let evts = self.exec_action(action)?;
+                                all_events.extend(evts);
+                            }
+                            all_events.push(FiredEvent {
+                                rule: rule.name.clone(),
+                                instance: instance_name.to_string(),
+                            });
+                        }
+                    }
+                    Ok(false) => {
+                        self.timers.cancel_for_timer(&rule.name, instance_name);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        Ok(all_events)
+    }
+
+    /// Run a full sweep of all rules across all instances.
+    /// Typically used after initialization to establish first stable state.
+    pub fn recalculate_all_rules(&mut self) -> Result<(), RuntimeError> {
+        let instance_names: Vec<String> = self.store.all().map(|(n, _)| n.clone()).collect();
+        for name in instance_names {
+            self.evaluate_rules(&name)?;
+        }
+        self.store.commit_all();
+        Ok(())
     }
 
     fn propagate_derived(&mut self, instance_name: &str, entity_name: &str) -> Result<(), RuntimeError> {
@@ -583,12 +666,7 @@ impl Evaluator {
         for (name, instance) in self.store.all() {
             let mut fields = serde_json::Map::new();
             for (fname, val) in &instance.fields {
-                fields.insert(fname.clone(), match val {
-                    Value::Number(n) if n.fract() == 0.0 => serde_json::json!(*n as i64),
-                    Value::Number(n) => serde_json::json!(*n),
-                    Value::Text(s) => serde_json::json!(s),
-                    Value::Bool(b) => serde_json::json!(b),
-                });
+                fields.insert(fname.clone(), self.value_to_json(val));
             }
             instances.insert(name.clone(), serde_json::json!({
                 "entity": instance.entity_name,
@@ -600,6 +678,37 @@ impl Evaluator {
             "stable": true,
             "version": self.snapshots.current_version()
         })
+    }
+
+    // ── List helpers ──────────────────────────────────────
+
+    fn eval_to_list(&self, expr: &Expr, ctx: Option<&str>) -> Result<Vec<Value>, RuntimeError> {
+        match self.eval_expr(expr, ctx)? {
+            Value::List(l) => Ok(l),
+            _ => Err(RuntimeError::R002),
+        }
+    }
+
+    fn eval_to_num_list(&self, expr: &Expr, ctx: Option<&str>) -> Result<Vec<f64>, RuntimeError> {
+        let list = self.eval_to_list(expr, ctx)?;
+        list.into_iter()
+            .map(|v| v.as_number().ok_or(RuntimeError::R002))
+            .collect()
+    }
+
+    fn value_to_json(&self, val: &Value) -> serde_json::Value {
+        match val {
+            Value::Number(n) if n.fract() == 0.0 => serde_json::json!(*n as i64),
+            Value::Number(n) => serde_json::json!(*n),
+            Value::Text(s) => serde_json::json!(s),
+            Value::Bool(b) => serde_json::json!(b),
+            Value::List(items) => {
+                let arr: Vec<serde_json::Value> = items.iter()
+                    .map(|v| self.value_to_json(v))
+                    .collect();
+                serde_json::json!(arr)
+            }
+        }
     }
 }
 

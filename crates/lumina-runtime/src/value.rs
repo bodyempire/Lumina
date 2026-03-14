@@ -6,6 +6,7 @@ pub enum Value {
     Number(f64),
     Text(String),
     Bool(bool),
+    List(Vec<Value>),
 }
 
 impl Value {
@@ -14,6 +15,7 @@ impl Value {
             Value::Number(_) => "Number",
             Value::Text(_)   => "Text",
             Value::Bool(_)   => "Boolean",
+            Value::List(_)   => "List",
         }
     }
 
@@ -29,12 +31,17 @@ impl Value {
         if let Value::Text(s) = self { Some(s) } else { None }
     }
 
+    pub fn as_list(&self) -> Option<&Vec<Value>> {
+        if let Value::List(l) = self { Some(l) } else { None }
+    }
+
     pub fn is_same_type(&self, other: &Value) -> bool {
         matches!(
             (self, other),
             (Value::Number(_), Value::Number(_)) |
             (Value::Text(_),   Value::Text(_))   |
-            (Value::Bool(_),   Value::Bool(_))
+            (Value::Bool(_),   Value::Bool(_))   |
+            (Value::List(_),   Value::List(_))
         )
     }
 }
@@ -48,6 +55,14 @@ impl std::fmt::Display for Value {
             }
             Value::Text(s)   => write!(f, "{s}"),
             Value::Bool(b)   => write!(f, "{b}"),
+            Value::List(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
         }
     }
 }
