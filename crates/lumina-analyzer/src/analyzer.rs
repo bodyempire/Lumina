@@ -18,6 +18,7 @@ pub struct AnalyzedProgram {
     pub schema:  Schema,
     pub graph:   DependencyGraph,
     pub fn_defs: HashMap<String, FnDecl>,
+    pub instances: HashMap<String, LuminaType>,
 }
 
 pub struct Analyzer {
@@ -27,6 +28,7 @@ pub struct Analyzer {
     pub allow_imports: bool,
     locals: HashMap<String, LuminaType>,
     pub fn_defs: HashMap<String, FnDecl>,
+    pub instances: HashMap<String, LuminaType>,
 }
 
 impl Analyzer {
@@ -38,6 +40,7 @@ impl Analyzer {
             allow_imports: true,
             locals: HashMap::new(),
             fn_defs: HashMap::new(),
+            instances: HashMap::new(),
         }
     }
 
@@ -54,6 +57,7 @@ impl Analyzer {
             schema: self.schema,
             graph: self.graph,
             fn_defs: self.fn_defs,
+            instances: self.instances,
         })
     }
 
@@ -80,6 +84,18 @@ impl Analyzer {
                             message: "import is not supported in single-file (WASM) mode".to_string(),
                             span: decl.span,
                         });
+                    }
+                }
+                Statement::Let(decl) => {
+                    match &decl.value {
+                        LetValue::EntityInit(init) => {
+                            self.instances.insert(decl.name.clone(), LuminaType::Entity(init.entity_name.clone()));
+                        }
+                        LetValue::Expr(expr) => {
+                             if let Ok(ty) = self.infer_type(expr, None, None) {
+                                self.instances.insert(decl.name.clone(), ty);
+                             }
+                        }
                     }
                 }
                 _ => {}
@@ -220,6 +236,7 @@ impl Analyzer {
                         }
                         RuleTrigger::Every(_) => {}
                     }
+
                     // Type check actions
                     for action in &rule.actions {
                         self.check_action(action, rule.span)?;
@@ -308,6 +325,15 @@ impl Analyzer {
                     }
                 }
             }
+            Expr::ListLiteral(elems) => {
+                for elem in elems {
+                    self.check_fn_body(elem, locals, span);
+                }
+            }
+            Expr::Index { list, index, .. } => {
+                self.check_fn_body(list, locals, span);
+                self.check_fn_body(index, locals, span);
+            }
             _ => {}
         }
     }
@@ -322,6 +348,9 @@ impl Analyzer {
                     if let Some(ty) = locs.get(name) {
                         return Ok(ty.clone());
                     }
+                }
+                if let Some(ty) = self.instances.get(name) {
+                    return Ok(ty.clone());
                 }
                 // First check if it's a field in the current entity context
                 if let Some(ent) = entity_ctx {
@@ -449,6 +478,77 @@ impl Analyzer {
                 }
             }
             Expr::Call { name, args, span } => {
+                // Check built-in list functions first
+                match name.as_str() {
+                    "len" => {
+                        if args.len() != 1 {
+                            return Err(AnalyzerError { code: "L013", message: format!("len expects 1 arg, got {}", args.len()), span: *span });
+                        }
+                        let arg_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        if !matches!(arg_ty, LuminaType::List(_)) {
+                            return Err(AnalyzerError { code: "L002", message: "len() requires a list argument".to_string(), span: *span });
+                        }
+                        return Ok(LuminaType::Number);
+                    }
+                    "min" | "max" | "sum" => {
+                        if args.len() != 1 {
+                            return Err(AnalyzerError { code: "L013", message: format!("{} expects 1 arg, got {}", name, args.len()), span: *span });
+                        }
+                        let arg_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        if arg_ty != LuminaType::List(Box::new(LuminaType::Number)) {
+                            return Err(AnalyzerError { code: "L002", message: format!("{}() requires a Number[] argument", name), span: *span });
+                        }
+                        return Ok(LuminaType::Number);
+                    }
+                    "append" => {
+                        if args.len() != 2 {
+                            return Err(AnalyzerError { code: "L013", message: format!("append expects 2 args, got {}", args.len()), span: *span });
+                        }
+                        let list_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        let val_ty = self.infer_type(&args[1], entity_ctx, locals)?;
+                        match &list_ty {
+                            LuminaType::List(inner) if **inner == val_ty => return Ok(list_ty),
+                            LuminaType::List(_) => return Err(AnalyzerError { code: "L002", message: "append value type must match list element type".to_string(), span: *span }),
+                            _ => return Err(AnalyzerError { code: "L002", message: "append() first argument must be a list".to_string(), span: *span }),
+                        }
+                    }
+                    "head" => {
+                        if args.len() != 1 {
+                            return Err(AnalyzerError { code: "L013", message: format!("head expects 1 arg, got {}", args.len()), span: *span });
+                        }
+                        let arg_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        match arg_ty {
+                            LuminaType::List(inner) => return Ok(*inner),
+                            _ => return Err(AnalyzerError { code: "L002", message: "head() requires a list argument".to_string(), span: *span }),
+                        }
+                    }
+                    "tail" => {
+                        if args.len() != 1 {
+                            return Err(AnalyzerError { code: "L013", message: format!("tail expects 1 arg, got {}", args.len()), span: *span });
+                        }
+                        let arg_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        if !matches!(&arg_ty, LuminaType::List(_)) {
+                            return Err(AnalyzerError { code: "L002", message: "tail() requires a list argument".to_string(), span: *span });
+                        }
+                        return Ok(arg_ty);
+                    }
+                    "at" => {
+                        if args.len() != 2 {
+                            return Err(AnalyzerError { code: "L013", message: format!("at expects 2 args, got {}", args.len()), span: *span });
+                        }
+                        let list_ty = self.infer_type(&args[0], entity_ctx, locals)?;
+                        let idx_ty = self.infer_type(&args[1], entity_ctx, locals)?;
+                        if idx_ty != LuminaType::Number {
+                            return Err(AnalyzerError { code: "L002", message: "at() index must be a Number".to_string(), span: *span });
+                        }
+                        match list_ty {
+                            LuminaType::List(inner) => return Ok(*inner),
+                            _ => return Err(AnalyzerError { code: "L002", message: "at() first argument must be a list".to_string(), span: *span }),
+                        }
+                    }
+                    _ => {} // Fall through to user-defined fn lookup
+                }
+                // User-defined function lookup
                 let decl = match self.fn_defs.get(name) {
                     Some(d) => d.clone(),
                     None => {
@@ -477,6 +577,43 @@ impl Analyzer {
                     }
                 }
                 Ok(decl.returns.clone())
+            }
+            Expr::ListLiteral(elems) => {
+                if elems.is_empty() {
+                    // Empty list — we can't infer element type, default to Number[]
+                    return Ok(LuminaType::List(Box::new(LuminaType::Number)));
+                }
+                let first_ty = self.infer_type(&elems[0], entity_ctx, locals)?;
+                for elem in &elems[1..] {
+                    let ty = self.infer_type(elem, entity_ctx, locals)?;
+                    if ty != first_ty {
+                        return Err(AnalyzerError {
+                            code: "L002",
+                            message: "all list elements must have the same type".to_string(),
+                            span: Span::default(),
+                        });
+                    }
+                }
+                Ok(LuminaType::List(Box::new(first_ty)))
+            }
+            Expr::Index { list, index, span } => {
+                let list_ty = self.infer_type(list, entity_ctx, locals)?;
+                let idx_ty = self.infer_type(index, entity_ctx, locals)?;
+                if idx_ty != LuminaType::Number {
+                    return Err(AnalyzerError {
+                        code: "L002",
+                        message: "list index must be a Number".to_string(),
+                        span: *span,
+                    });
+                }
+                match list_ty {
+                    LuminaType::List(inner) => Ok(*inner),
+                    _ => Err(AnalyzerError {
+                        code: "L002",
+                        message: "index access only allowed on lists".to_string(),
+                        span: *span,
+                    }),
+                }
             }
         }
     }
@@ -522,6 +659,15 @@ impl Analyzer {
                     self.collect_dependencies(arg, entity_name, target_id)?;
                 }
             }
+            Expr::ListLiteral(elems) => {
+                for elem in elems {
+                    self.collect_dependencies(elem, entity_name, target_id)?;
+                }
+            }
+            Expr::Index { list, index, .. } => {
+                self.collect_dependencies(list, entity_name, target_id)?;
+                self.collect_dependencies(index, entity_name, target_id)?;
+            }
             _ => {}
         }
         Ok(())
@@ -534,7 +680,11 @@ impl Analyzer {
                 Ok(())
             }
             Action::Update { target, value } => {
-                let field_schema = self.schema.get_field(&target.instance, &target.field).ok_or_else(|| vec![AnalyzerError {
+                let entity_name = match self.instances.get(&target.instance) {
+                    Some(LuminaType::Entity(e)) => e,
+                    _ => &target.instance,
+                };
+                let field_schema = self.schema.get_field(entity_name, &target.field).ok_or_else(|| vec![AnalyzerError {
                     code: "L010",
                     message: format!("Unknown field '{}' on entity '{}'", target.field, target.instance),
                     span: target.span,

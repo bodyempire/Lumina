@@ -73,6 +73,17 @@ impl LuminaRuntime {
             ),
             serde_json::Value::String(s) => lumina_runtime::Value::Text(s),
             serde_json::Value::Bool(b)   => lumina_runtime::Value::Bool(b),
+            serde_json::Value::Array(arr) => {
+                let items: Result<Vec<_>, _> = arr.into_iter().map(|v| match v {
+                    serde_json::Value::Number(n) => Ok(lumina_runtime::Value::Number(
+                        n.as_f64().ok_or_else(|| JsValue::from_str("Invalid number in list"))?
+                    )),
+                    serde_json::Value::String(s) => Ok(lumina_runtime::Value::Text(s)),
+                    serde_json::Value::Bool(b) => Ok(lumina_runtime::Value::Bool(b)),
+                    _ => Err(JsValue::from_str("Unsupported value type in list")),
+                }).collect();
+                lumina_runtime::Value::List(items?)
+            }
             _ => return Err(JsValue::from_str("Unsupported value type")),
         };
 
