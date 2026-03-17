@@ -1,8 +1,8 @@
 {
     "name": "lumina-language",
     "displayName": "Lumina",
-    "description": "Lumina (.lum) language support - syntax highlighting and snippets",
-    "version": "0.1.2",
+    "description": "Lumina (.lum) language support - syntax highlighting, snippets, and LSP",
+    "version": "0.2.0",
     "publisher": "isaac-ishimwe",
     "icon": "icon.png",
     "engines": {
@@ -11,6 +11,7 @@
     "categories": [
         "Programming Languages"
     ],
+    "main": "./out/extension.js",
     "contributes": {
         "languages": [
             {
@@ -42,5 +43,16 @@
                 "path": "./snippets/lumina.json"
             }
         ]
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.0"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.75.0",
+        "typescript": "^5.0.0"
+    },
+    "scripts": {
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./"
     }
 }

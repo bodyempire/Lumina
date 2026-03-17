@@ -9,4 +9,5 @@ members = [
     "crates/lumina-ffi",
     "crates/lumina-cli",
     "crates/lumina-wasm",
+    "crates/lumina-lsp",
 ]
