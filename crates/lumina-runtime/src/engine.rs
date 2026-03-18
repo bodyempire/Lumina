@@ -8,6 +8,7 @@ use crate::snapshot::{SnapshotStack, PropResult, FiredEvent, RollbackResult, Dia
 use crate::RuntimeError;
 use crate::rules;
 use crate::timers::TimerHeap;
+use crate::adapter::LuminaAdapter;
 
 pub const MAX_DEPTH: usize = 100;
 
@@ -22,6 +23,7 @@ pub struct Evaluator {
     pub derived_exprs: HashMap<(String, String), Expr>,
     pub functions: HashMap<String, FnDecl>,
     pub timers:    TimerHeap,
+    pub adapters:  Vec<Box<dyn LuminaAdapter>>,
     depth:         usize,
     fired_this_cycle: HashSet<String>,
     output:        Vec<String>,
@@ -40,6 +42,7 @@ impl Evaluator {
             derived_exprs: HashMap::new(),
             functions: HashMap::new(),
             timers,
+            adapters: Vec::new(),
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
@@ -60,6 +63,7 @@ impl Evaluator {
             derived_exprs: HashMap::new(),
             functions: HashMap::new(),
             timers: TimerHeap::new(),
+            adapters: Vec::new(),
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
@@ -86,6 +90,11 @@ impl Evaluator {
 
     pub fn register_derived(&mut self, entity: &str, field: &str, expr: Expr) {
         self.derived_exprs.insert((entity.to_string(), field.to_string()), expr);
+    }
+
+    /// Register an external entity adapter.
+    pub fn register_adapter(&mut self, a: Box<dyn LuminaAdapter>) {
+        self.adapters.push(a);
     }
 
     pub fn drain_output(&mut self) -> Vec<String> {
@@ -463,7 +472,14 @@ impl Evaluator {
         // Apply
         self.store.get_mut(instance_name)
             .ok_or(RuntimeError::R001 { instance: instance_name.to_string() })?
-            .set(field_name, new_value);
+            .set(field_name, new_value.clone());
+
+        // Write-back to external entity adapters
+        for a in &mut self.adapters {
+            if a.entity_name() == entity_name {
+                a.on_write(field_name, &new_value);
+            }
+        }
 
         // Propagate derived fields
         if let Err(e) = self.propagate_derived(instance_name, &entity_name) {
@@ -573,6 +589,22 @@ impl Evaluator {
     /// Called periodically by the host — fires any elapsed for/every timers
     pub fn tick(&mut self) -> Result<Vec<FiredEvent>, RollbackResult> {
         let mut all_events = vec![];
+
+        // ── Poll external entity adapters ──────────────────────────
+        let updates: Vec<(String, String, Value)> = self.adapters
+            .iter_mut()
+            .flat_map(|a| {
+                let name = a.entity_name().to_string();
+                std::iter::from_fn(move || {
+                    a.poll().map(|(f, v)| (name.clone(), f, v))
+                }).collect::<Vec<_>>()
+            }).collect();
+
+        for (entity, field, value) in updates {
+            if let Some(inst_name) = self.store.find_instance_of(&entity) {
+                let _ = self.apply_update(&inst_name, &field, value);
+            }
+        }
 
         // ── Fire elapsed `for` timers ──────────────────────────────────
         let elapsed = self.timers.drain_elapsed_for_timers();

@@ -80,6 +80,14 @@ impl EntityStore {
         self.instances.iter().filter(move |(_, i)| i.entity_name == entity_name)
     }
 
+    /// Find the first instance of a given entity type.
+    /// Used by adapter polling to map entity names to instance names.
+    pub fn find_instance_of(&self, entity_name: &str) -> Option<String> {
+        self.instances.iter()
+            .find(|(_, i)| i.entity_name == entity_name)
+            .map(|(n, _)| n.clone())
+    }
+
     /// Commit all instances — called after stable propagation
     pub fn commit_all(&mut self) {
         for instance in self.instances.values_mut() {

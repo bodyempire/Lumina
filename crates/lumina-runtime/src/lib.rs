@@ -4,10 +4,13 @@ pub mod snapshot;
 pub mod engine;
 pub mod rules;
 pub mod timers;
+pub mod adapter;
+pub mod adapters;
 
 pub use value::Value;
 pub use store::{Instance, EntityStore};
 pub use snapshot::{Snapshot, SnapshotStack, PropResult, FiredEvent, RollbackResult, Diagnostic};
+pub use adapter::LuminaAdapter;
 
 #[derive(Debug)]
 pub enum RuntimeError {
