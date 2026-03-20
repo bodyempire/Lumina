@@ -12,7 +12,7 @@ export const DOCS = {
       {
         heading: "Installation",
         code: `# Clone and build from source
-git clone https://github.com/ishimwe/Lumina
+git clone https://github.com/IshimweIsaac/Lumina
 cd Lumina && cargo build --release
 
 # Run the REPL

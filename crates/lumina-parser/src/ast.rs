@@ -157,6 +157,8 @@ pub struct RuleDecl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RuleTrigger {
     When(Condition),
+    Any(FleetCondition),
+    All(FleetCondition),
     Every(Duration),
 }
 
@@ -164,6 +166,14 @@ pub enum RuleTrigger {
 pub struct Condition {
     pub expr:         Expr,
     pub becomes:      Option<Expr>,
+    pub for_duration: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetCondition {
+    pub entity:       String,
+    pub field:        String,
+    pub becomes:      Expr,
     pub for_duration: Option<Duration>,
 }
 

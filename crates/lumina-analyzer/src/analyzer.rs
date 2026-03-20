@@ -238,6 +238,48 @@ impl Analyzer {
                                 }
                             }
                         }
+                        RuleTrigger::Any(fc) | RuleTrigger::All(fc) => {
+                            // L026: entity must exist
+                            if let Some(entity_schema) = self.schema.entities.get(&fc.entity) {
+                                // L027: field must exist and be Boolean
+                                if let Some(field_schema) = entity_schema.fields.get(&fc.field) {
+                                    if field_schema.ty != LuminaType::Boolean {
+                                        return Err(vec![AnalyzerError {
+                                            code: "L027",
+                                            message: format!(
+                                                "fleet trigger field '{}.{}' must be Boolean, found {:?}",
+                                                fc.entity, fc.field, field_schema.ty
+                                            ),
+                                            span: rule.span,
+                                        }]);
+                                    }
+                                } else {
+                                    return Err(vec![AnalyzerError {
+                                        code: "L027",
+                                        message: format!(
+                                            "unknown field '{}' on entity '{}'",
+                                            fc.field, fc.entity
+                                        ),
+                                        span: rule.span,
+                                    }]);
+                                }
+                            } else {
+                                return Err(vec![AnalyzerError {
+                                    code: "L026",
+                                    message: format!("unknown entity '{}' in fleet trigger", fc.entity),
+                                    span: rule.span,
+                                }]);
+                            }
+                            // Validate becomes value is Boolean
+                            let b_ty = self.infer_type(&fc.becomes, None, None).map_err(|e| vec![e])?;
+                            if b_ty != LuminaType::Boolean {
+                                return Err(vec![AnalyzerError {
+                                    code: "L002",
+                                    message: "fleet trigger becomes value must be Boolean".to_string(),
+                                    span: rule.span,
+                                }]);
+                            }
+                        }
                         RuleTrigger::Every(_) => {}
                     }
 

@@ -372,13 +372,22 @@ impl Parser {
 
         let trigger = if self.check(&Token::KwWhen) {
             self.advance();
-            RuleTrigger::When(self.parse_condition()?)
+            // Check for fleet-level triggers: "when any" or "when all"
+            if self.check(&Token::KwAny) {
+                self.advance();
+                RuleTrigger::Any(self.parse_fleet_condition()?)
+            } else if self.check(&Token::KwAll) {
+                self.advance();
+                RuleTrigger::All(self.parse_fleet_condition()?)
+            } else {
+                RuleTrigger::When(self.parse_condition()?)
+            }
         } else if self.check(&Token::KwEvery) {
             self.advance();
             RuleTrigger::Every(self.parse_duration()?)
         } else {
             return Err(ParseError::new(
-                "expected 'when' or 'every' in rule body",
+                "expected 'when', or 'every' in rule body",
                 self.current_span(),
             ));
         };
@@ -386,6 +395,20 @@ impl Parser {
         let actions = self.parse_actions()?;
         self.expect(&Token::RBrace)?;
         Ok(Statement::Rule(RuleDecl { name, trigger, actions, span: start }))
+    }
+
+    fn parse_fleet_condition(&mut self) -> Result<FleetCondition, ParseError> {
+        // Syntax: Entity.field becomes <value> [for <duration>]
+        let entity = self.expect_ident("entity name")?;
+        self.expect(&Token::Dot)?;
+        let field = self.expect_ident("field name")?;
+        self.expect(&Token::KwBecomes)?;
+        let becomes = self.parse_expr(0)?;
+        let for_duration = if self.check(&Token::KwFor) {
+            self.advance();
+            Some(self.parse_duration()?)
+        } else { None };
+        Ok(FleetCondition { entity, field, becomes, for_duration })
     }
 
     fn parse_condition(&mut self) -> Result<Condition, ParseError> {

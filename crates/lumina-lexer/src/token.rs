@@ -33,6 +33,8 @@ pub enum Token {
     #[token("fn")]       KwFn,
     #[token("import")]   Import,
     #[token("prev")]     KwPrev,
+    #[token("any")]      KwAny,
+    #[token("all")]      KwAll,
 
     // ── Operators & punctuation ────────────────────────────
     #[token(":=")]  ColonEq,

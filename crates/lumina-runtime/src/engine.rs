@@ -9,6 +9,7 @@ use crate::RuntimeError;
 use crate::rules;
 use crate::timers::TimerHeap;
 use crate::adapter::LuminaAdapter;
+use crate::fleet::FleetState;
 
 pub const MAX_DEPTH: usize = 100;
 
@@ -25,6 +26,9 @@ pub struct Evaluator {
     pub timers:    TimerHeap,
     pub adapters:  Vec<Box<dyn LuminaAdapter>>,
     pub prev_store: Option<EntityStore>,
+    pub fleet_state: FleetState,
+    prev_fleet_any: HashMap<(String, String), bool>,
+    prev_fleet_all: HashMap<(String, String), bool>,
     depth:         usize,
     fired_this_cycle: HashSet<String>,
     output:        Vec<String>,
@@ -52,6 +56,9 @@ impl Evaluator {
             timers,
             adapters: Vec::new(),
             prev_store: None,
+            fleet_state: FleetState::new(),
+            prev_fleet_any: HashMap::new(),
+            prev_fleet_all: HashMap::new(),
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
@@ -74,6 +81,9 @@ impl Evaluator {
             timers: TimerHeap::new(),
             adapters: Vec::new(),
             prev_store: None,
+            fleet_state: FleetState::new(),
+            prev_fleet_any: HashMap::new(),
+            prev_fleet_all: HashMap::new(),
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
@@ -501,10 +511,24 @@ impl Evaluator {
             }
         }
 
+        // Capture old Boolean value for fleet tracking
+        let old_bool = self.store.get(instance_name)
+            .and_then(|inst| inst.get(field_name))
+            .and_then(|v| if let Value::Bool(b) = v { Some(*b) } else { None });
+
         // Apply
         self.store.get_mut(instance_name)
             .ok_or(RuntimeError::R001 { instance: instance_name.to_string() })?
             .set(field_name, new_value.clone());
+
+        // Update fleet state for Boolean fields
+        if let Value::Bool(new_b) = &new_value {
+            let total = self.store.all_of_entity(&entity_name).count();
+            self.fleet_state.update(
+                &entity_name, field_name,
+                old_bool.unwrap_or(false), *new_b, total,
+            );
+        }
 
         // Write-back to external entity adapters
         for a in &mut self.adapters {
@@ -538,18 +562,49 @@ impl Evaluator {
         let mut all_events = Vec::new();
         let rules_clone = self.rules.clone();
         for rule in &rules_clone {
-            if let RuleTrigger::When(condition) = &rule.trigger {
-                match rules::condition_is_met(self, condition, instance_name, true) {
-                    Ok(true) => {
-                        let fire_key = format!("{}::{}", rule.name, instance_name);
-                        if self.fired_this_cycle.contains(&fire_key) {
-                            continue;
+            match &rule.trigger {
+                RuleTrigger::When(condition) => {
+                    match rules::condition_is_met(self, condition, instance_name, true) {
+                        Ok(true) => {
+                            let fire_key = format!("{}::{}", rule.name, instance_name);
+                            if self.fired_this_cycle.contains(&fire_key) {
+                                continue;
+                            }
+                            if let Some(dur) = &condition.for_duration {
+                                let _ = self.timers.start_for_timer(
+                                    &rule.name, instance_name, dur.to_seconds(),
+                                );
+                            } else {
+                                self.fired_this_cycle.insert(fire_key);
+                                for action in &rule.actions {
+                                    let evts = self.exec_action(action)?;
+                                    all_events.extend(evts);
+                                }
+                                all_events.push(FiredEvent {
+                                    rule: rule.name.clone(),
+                                    instance: instance_name.to_string(),
+                                });
+                            }
                         }
-                        if let Some(dur) = &condition.for_duration {
-                            let _ = self.timers.start_for_timer(
-                                &rule.name, instance_name, dur.to_seconds(),
-                            );
-                        } else {
+                        Ok(false) => {
+                            self.timers.cancel_for_timer(&rule.name, instance_name);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                RuleTrigger::Any(fc) => {
+                    let key = (fc.entity.clone(), fc.field.clone());
+                    let target = matches!(&fc.becomes, Expr::Bool(true));
+                    let now_met = if target {
+                        self.fleet_state.any_true(&fc.entity, &fc.field)
+                    } else {
+                        !self.fleet_state.all_true(&fc.entity, &fc.field)
+                    };
+                    let prev = self.prev_fleet_any.get(&key).copied().unwrap_or(false);
+                    // Edge detection: fire only on rising edge
+                    if now_met && !prev {
+                        let fire_key = format!("{}::fleet_any", rule.name);
+                        if !self.fired_this_cycle.contains(&fire_key) {
                             self.fired_this_cycle.insert(fire_key);
                             for action in &rule.actions {
                                 let evts = self.exec_action(action)?;
@@ -557,15 +612,39 @@ impl Evaluator {
                             }
                             all_events.push(FiredEvent {
                                 rule: rule.name.clone(),
-                                instance: instance_name.to_string(),
+                                instance: "fleet".to_string(),
                             });
                         }
                     }
-                    Ok(false) => {
-                        self.timers.cancel_for_timer(&rule.name, instance_name);
-                    }
-                    Err(e) => return Err(e),
+                    self.prev_fleet_any.insert(key, now_met);
                 }
+                RuleTrigger::All(fc) => {
+                    let key = (fc.entity.clone(), fc.field.clone());
+                    let target = matches!(&fc.becomes, Expr::Bool(true));
+                    let now_met = if target {
+                        self.fleet_state.all_true(&fc.entity, &fc.field)
+                    } else {
+                        !self.fleet_state.any_true(&fc.entity, &fc.field)
+                    };
+                    let prev = self.prev_fleet_all.get(&key).copied().unwrap_or(false);
+                    // Edge detection: fire only on rising edge
+                    if now_met && !prev {
+                        let fire_key = format!("{}::fleet_all", rule.name);
+                        if !self.fired_this_cycle.contains(&fire_key) {
+                            self.fired_this_cycle.insert(fire_key);
+                            for action in &rule.actions {
+                                let evts = self.exec_action(action)?;
+                                all_events.extend(evts);
+                            }
+                            all_events.push(FiredEvent {
+                                rule: rule.name.clone(),
+                                instance: "fleet".to_string(),
+                            });
+                        }
+                    }
+                    self.prev_fleet_all.insert(key, now_met);
+                }
+                RuleTrigger::Every(_) => {} // handled in tick()
             }
         }
         Ok(all_events)

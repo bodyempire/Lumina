@@ -23,28 +23,26 @@ entity Moto {
 }
 """
 
-def generate_fleet_source(count):
-    lines = []
-    # Generation rules for each instance
+def generate_fleet_source(count: int) -> str:
+    all_lines: list[str] = []
     for i in range(1, count + 1):
         name = f"moto{i}"
-        lines.append(f"let {name} = Moto {{ battery: {80 + (i % 20)}, isBusy: false, isCharging: false, isLocked: false }}")
-        lines.append(f'rule "{name} low battery" {{ when {name}.isLowBattery becomes true then show "Lumina Alert: {name} Battery Low!" }}')
-        lines.append(f'rule "{name} fully charged" {{ when {name}.battery >= 100 becomes true then update {name}.isCharging to false }}')
-        lines.append(f'rule "{name} auto lock" {{ when {name}.isIdle becomes true for 10 s then update {name}.isLocked to true }}')
-        lines.append(f'rule "{name} unlock" {{ when {name}.isBusy becomes true then update {name}.isLocked to false }}')
-        # Guard against conflicting states
-        lines.append(f'rule "{name} busy guard" {{ when {name}.isBusy becomes true and {name}.isCharging then update {name}.isCharging to false }}')
-        lines.append(f'rule "{name} charge guard" {{ when {name}.isCharging becomes true and {name}.isBusy then update {name}.isBusy to false }}')
-    return "\n".join(lines)
+        all_lines.extend([
+            f"let {name} = Moto {{ battery: {80 + (i % 20)}, isBusy: true, isCharging: false, isLocked: false }}",
+            f'rule "{name} startup" {{ when {name}.isBusy for 1 s then update {name}.isBusy to false }}',
+            f'rule "{name} low battery" {{ when {name}.isLowBattery becomes true then show "Lumina Alert: {name} Battery Low!" }}',
+            f'rule "{name} fully charged" {{ when {name}.battery >= 100 becomes true then update {name}.isCharging to false }}',
+            f'rule "{name} auto lock" {{ when {name}.isIdle becomes true for 10 s then update {name}.isLocked to true }}',
+            f'rule "{name} unlock" {{ when {name}.isBusy becomes true then update {name}.isLocked to false }}'
+        ])
+    return "\n".join(all_lines)
 
 SOURCE = SOURCE_HEADER + generate_fleet_source(1000)
-
 
 # Initialize Lumina runtime
 try:
     rt = LuminaRuntime.from_source(SOURCE)
-    print("Lumina Runtime initialized successfully.")
+    print("Lumina Runtime initialized with startup rules.")
 except Exception as e:
     print(f"Error initializing Lumina Runtime: {e}")
     rt = None

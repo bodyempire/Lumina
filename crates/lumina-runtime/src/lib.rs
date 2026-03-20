@@ -6,6 +6,7 @@ pub mod rules;
 pub mod timers;
 pub mod adapter;
 pub mod adapters;
+pub mod fleet;
 
 pub use value::Value;
 pub use store::{Instance, EntityStore};

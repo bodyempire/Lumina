@@ -8,7 +8,7 @@
 set -e
 
 # --- Configuration ---
-REPO_URL="https://github.com/bodyempire/Lumina.git"
+REPO_URL="https://github.com/IshimweIsaac/Lumina.git"
 INSTALL_DIR="${LUMINA_HOME:-$HOME/.lumina}"
 BIN_DIR="$INSTALL_DIR/bin"
 EXE_NAME="lumina"
