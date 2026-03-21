@@ -211,6 +211,8 @@ mod tests {
                     unit: TimeUnit::Hours,
                 }),
                 actions: vec![],
+                cooldown: None,
+                on_clear: None,
                 span: Span::default(),
             },
             RuleDecl {
@@ -221,6 +223,8 @@ mod tests {
                     for_duration: None,
                 }),
                 actions: vec![],
+                cooldown: None,
+                on_clear: None,
                 span: Span::default(),
             },
         ];

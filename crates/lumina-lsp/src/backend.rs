@@ -20,7 +20,50 @@ impl LuminaBackend {
         let prog = parse(&src).ok();
         let diags = match &prog {
             Some(p) => {
-                match analyze(p.clone(), &src, uri.path(), true) {
+                let mut merged_prog = p.clone();
+                
+                // Simple recursive import resolution for the LSP context
+                fn load_imports(prog: &lumina_parser::ast::Program, dir: &std::path::Path, out: &mut Vec<lumina_parser::ast::Statement>, visited: &mut std::collections::HashSet<std::path::PathBuf>) {
+                    for import in prog.imports() {
+                        let dep_path = dir.join(&import.path);
+                        if let Ok(dep_canonical) = dep_path.canonicalize() {
+                            if visited.insert(dep_canonical.clone()) {
+                                if let Ok(dep_src) = std::fs::read_to_string(&dep_canonical) {
+                                    if let Ok(dep_prog) = parse(&dep_src) {
+                                        // Recursively load transitive imports
+                                        load_imports(&dep_prog, dep_canonical.parent().unwrap(), out, visited);
+                                        // Collect statements
+                                        for stmt in dep_prog.statements {
+                                            if !matches!(stmt, lumina_parser::ast::Statement::Import(_)) {
+                                                out.push(stmt);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                let mut visited = std::collections::HashSet::new();
+                let mut extra_statements = Vec::new();
+                if let Ok(path) = uri.to_file_path() {
+                    if let Ok(canonical) = path.canonicalize() {
+                        visited.insert(canonical.clone());
+                        load_imports(p, canonical.parent().unwrap(), &mut extra_statements, &mut visited);
+                    }
+                }
+                
+                // Prepend imported statements so they are available
+                let mut final_statements = extra_statements;
+                for stmt in p.statements.clone() {
+                    if !matches!(stmt, lumina_parser::ast::Statement::Import(_)) {
+                        final_statements.push(stmt);
+                    }
+                }
+                merged_prog.statements = final_statements;
+
+                match analyze(merged_prog, &src, uri.path(), true) {
                     Ok(_analyzed) => vec![],
                     Err(diagnostics) => diagnostics,
                 }

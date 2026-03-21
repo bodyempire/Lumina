@@ -1,8 +1,8 @@
 package lumina
 
 /*
-#cgo linux LDFLAGS: -L../../../target/release -llumina_ffi -Wl,-rpath,../../../target/release
-#cgo darwin LDFLAGS: -L../../../target/release -llumina_ffi
+#cgo linux LDFLAGS: -L../../../target/release -L../../../target/debug -llumina_ffi -Wl,-rpath,../../../target/release -Wl,-rpath,../../../target/debug
+#cgo darwin LDFLAGS: -L../../../target/release -L../../../target/debug -llumina_ffi
 #include "../lumina.h"
 #include <stdlib.h>
 */
@@ -85,9 +85,29 @@ func (r *Runtime) Tick() ([]map[string]any, error) {
 		return nil, errors.New("lumina: null response from tick")
 	}
 	defer C.lumina_free_string(raw)
+	result := C.GoString(raw)
+	if strings.HasPrefix(result, "ERROR:") {
+		return nil, fmt.Errorf("lumina rollback: %s", result[6:])
+	}
 	var events []map[string]any
-	err := json.Unmarshal([]byte(C.GoString(raw)), &events)
-	return events, err
+	if err := json.Unmarshal([]byte(result), &events); err != nil {
+		return nil, fmt.Errorf("lumina: cannot parse response: %w", err)
+	}
+	return events, nil
+}
+
+// GetMessages retrieves any strings printed by rule actions.
+func (r *Runtime) GetMessages() ([]string, error) {
+	raw := C.lumina_get_messages(r.ptr)
+	if raw == nil {
+		return nil, errors.New("lumina: null response from get_messages")
+	}
+	defer C.lumina_free_string(raw)
+	var messages []string
+	if err := json.Unmarshal([]byte(C.GoString(raw)), &messages); err != nil {
+		return nil, fmt.Errorf("lumina: cannot parse messages: %w", err)
+	}
+	return messages, nil
 }
 
 // Close destroys the runtime and frees all C-side memory.

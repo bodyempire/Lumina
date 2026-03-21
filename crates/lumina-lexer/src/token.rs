@@ -35,6 +35,12 @@ pub enum Token {
     #[token("prev")]     KwPrev,
     #[token("any")]      KwAny,
     #[token("all")]      KwAll,
+    #[token("alert")]    Alert,
+    #[token("severity")] Severity,
+    #[token("aggregate")] Aggregate,
+    #[token("over")]      Over,
+    #[token("cooldown")]   Cooldown,
+    #[token("clear")]      Clear,
 
     // ── Operators & punctuation ────────────────────────────
     #[token(":=")]  ColonEq,

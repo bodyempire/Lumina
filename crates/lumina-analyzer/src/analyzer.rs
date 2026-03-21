@@ -100,6 +100,7 @@ impl Analyzer {
                         }
                     }
                 }
+                Statement::Aggregate(_) => {}
                 _ => {}
             }
         }
@@ -307,6 +308,7 @@ impl Analyzer {
                         }
                     }
                 }
+                Statement::Aggregate(_) => {}
                 _ => {}
             }
         }
@@ -840,6 +842,7 @@ impl Analyzer {
                 }
                 Ok(())
             }
+            Action::Alert(_) => Ok(()),
         }
     }
 }

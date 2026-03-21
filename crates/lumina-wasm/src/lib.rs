@@ -14,12 +14,14 @@ pub fn init() {
 #[wasm_bindgen]
 pub struct LuminaRuntime {
     evaluator: Evaluator,
+    pending_alerts: Vec<lumina_runtime::FiredEvent>,
 }
 
 #[wasm_bindgen]
 impl LuminaRuntime {
     #[wasm_bindgen(constructor)]
     pub fn new(source: &str) -> Result<LuminaRuntime, JsValue> {
+        let now = js_sys::Date::now();
         let program = parse(source)
             .map_err(|e| JsValue::from_str(&format!("Parse error: {e}")))?;
 
@@ -45,16 +47,27 @@ impl LuminaRuntime {
         }
 
         let mut evaluator = Evaluator::new(analyzed.schema, analyzed.graph, rules);
+        evaluator.now = now;
         evaluator.derived_exprs = derived;
 
+        let mut pending_alerts = Vec::new();
+
         for stmt in &analyzed.program.statements {
-            evaluator.exec_statement(stmt)
+            let evts = evaluator.exec_statement(stmt)
                 .map_err(|e| JsValue::from_str(&format!(
                     "Runtime error [{}]: {}", e.code(), e.message()
                 )))?;
+            pending_alerts.extend(evts);
         }
 
-        Ok(LuminaRuntime { evaluator })
+        // Final recalculation to pick up initial steady-state alerts
+        let initial_evts = evaluator.recalculate_all_rules()
+            .map_err(|e| JsValue::from_str(&format!(
+                "Runtime error [{}]: {}", e.code(), e.message()
+            )))?;
+        pending_alerts.extend(initial_evts);
+
+        Ok(LuminaRuntime { evaluator, pending_alerts })
     }
 
     #[wasm_bindgen]
@@ -64,6 +77,7 @@ impl LuminaRuntime {
         field_name: &str,
         value_json: &str,
     ) -> Result<String, JsValue> {
+        self.evaluator.now = js_sys::Date::now();
         let json_val: serde_json::Value = serde_json::from_str(value_json)
             .map_err(|e| JsValue::from_str(&format!("Invalid JSON: {e}")))?;
 
@@ -102,15 +116,23 @@ impl LuminaRuntime {
 
     #[wasm_bindgen]
     pub fn tick(&mut self) -> String {
+        self.evaluator.now = js_sys::Date::now();
+        let mut all_events = std::mem::take(&mut self.pending_alerts);
+        
         match self.evaluator.tick() {
-            Ok(events) => serde_json::to_string(&events).unwrap(),
+            Ok(events) => {
+                all_events.extend(events);
+                serde_json::to_string(&all_events).unwrap()
+            }
             Err(rb) => format!("ERROR:{}", serde_json::to_string(&rb.diagnostic).unwrap()),
         }
     }
 
     #[wasm_bindgen]
     pub fn get_output(&mut self) -> String {
-        self.evaluator.drain_output().join("\n")
+        let out = self.evaluator.get_output().join("\n");
+        self.evaluator.clear_output();
+        out
     }
 
     #[wasm_bindgen]

@@ -1,6 +1,6 @@
 """
 Run with: python test_ffi.py
-Requires: cargo build --release -p lumina-ffi
+Requires: cargo build --release -p lumina_ffi
 """
 from lumina_py import LuminaRuntime
 
@@ -56,7 +56,27 @@ def test_rollback_message():
         rt.apply_event("Moto", "isLowBattery", True)
         print("✗ test_rollback_message — expected error, got none")
     except RuntimeError as e:
-        print(f"✓ test_rollback_message — got expected error")
+        assert "Cannot update derived field" in str(e)
+        assert "computed automatically" in str(e)
+        print(f"✓ test_rollback_message — got expected error message with help")
+
+
+def test_get_messages():
+    rt = LuminaRuntime.from_source(SOURCE)
+    rt.apply_event("Moto", "battery", 10)
+    messages = rt.get_messages()
+    assert len(messages) == 1
+    assert "battery low!" in messages[0]
+    print("✓ test_get_messages")
+
+
+def test_creation_error():
+    try:
+        LuminaRuntime.from_source("entity { broken")
+        print("✗ test_creation_error — expected error, got none")
+    except ValueError as e:
+        assert "Parse error" in str(e)
+        print(f"✓ test_creation_error — got descriptive error: {e}")
 
 
 if __name__ == "__main__":
@@ -65,4 +85,6 @@ if __name__ == "__main__":
     test_apply_event()
     test_derived_recomputes()
     test_rollback_message()
+    test_get_messages()
+    test_creation_error()
     print("\nAll FFI tests passed ✓")

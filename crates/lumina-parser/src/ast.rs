@@ -26,6 +26,7 @@ pub enum Statement {
     Action(Action),
     Fn(FnDecl),
     Import(ImportDecl),
+    Aggregate(AggregateDecl),
 }
 
 // ── Function declaration ───────────────────────────────────────────────────
@@ -148,10 +149,12 @@ pub struct EntityInit {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleDecl {
-    pub name:    String,
-    pub trigger: RuleTrigger,
-    pub actions: Vec<Action>,
-    pub span:    Span,
+    pub name:     String,
+    pub trigger:  RuleTrigger,
+    pub actions:  Vec<Action>,
+    pub cooldown: Option<Duration>,
+    pub on_clear: Option<Vec<Action>>,
+    pub span:     Span,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +197,10 @@ impl Duration {
             TimeUnit::Days    => self.value * 86400.0,
         }
     }
+
+    pub fn to_std_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_secs_f64(self.to_seconds())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +219,17 @@ pub enum Action {
     Update { target: FieldPath, value: Expr },
     Create { entity: String, fields: Vec<(String, Expr)> },
     Delete(String),
+    Alert(AlertAction),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertAction {
+    pub severity: Expr,
+    pub message:  Expr,
+    pub source:   Option<Expr>,
+    pub code:     Option<Expr>,
+    pub payload:  Vec<(String, Expr)>,
+    pub span:     Span,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,8 +300,36 @@ pub enum BinOp {
     And, Or,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UnOp {
     Neg,
     Not,
+}
+
+// ── Aggregates ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateDecl {
+    pub name:   String,
+    pub over:   String,
+    pub fields: Vec<AggregateField>,
+    pub span:   Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggregateField {
+    pub name: String,
+    pub expr: AggregateExpr,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AggregateExpr {
+    Avg(String),
+    Min(String),
+    Max(String),
+    Sum(String),
+    Count(Option<String>),
+    Any(String),
+    All(String),
 }

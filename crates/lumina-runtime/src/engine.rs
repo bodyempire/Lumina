@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
+use crate::aggregate::AggregateStore;
 use lumina_analyzer::types::Schema;
 use lumina_analyzer::graph::DependencyGraph;
 use lumina_parser::ast::*;
@@ -32,6 +34,10 @@ pub struct Evaluator {
     depth:         usize,
     fired_this_cycle: HashSet<String>,
     output:        Vec<String>,
+    pub cooldown_map: HashMap<(String, String), f64>,
+    pub rule_active: HashMap<(String, String), bool>,
+    pub agg_store: AggregateStore,
+    pub now:       f64,
 }
 impl Evaluator {
     pub fn get_output(&self) -> &[String] {
@@ -62,6 +68,10 @@ impl Evaluator {
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
+            cooldown_map: HashMap::new(),
+            rule_active: HashMap::new(),
+            agg_store: AggregateStore::new(),
+            now: 0.0,
         }
     }
 
@@ -87,6 +97,10 @@ impl Evaluator {
             depth: 0,
             fired_this_cycle: HashSet::new(),
             output: Vec::new(),
+            cooldown_map: HashMap::new(),
+            rule_active: HashMap::new(),
+            agg_store: AggregateStore::new(),
+            now: 0.0,
         }
     }
 
@@ -106,6 +120,18 @@ impl Evaluator {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    pub fn should_fire(&self, rule_name: &str, instance_name: &str, cooldown: &Duration) -> bool {
+        if let Some(last_fired) = self.cooldown_map.get(&(rule_name.to_string(), instance_name.to_string())) {
+            (self.now - *last_fired) >= (cooldown.to_seconds() * 1000.0)
+        } else {
+            true
+        }
+    }
+
+    pub fn record_firing(&mut self, rule_name: &str, instance_name: &str) {
+        self.cooldown_map.insert((rule_name.to_string(), instance_name.to_string()), self.now);
     }
 
     pub fn register_derived(&mut self, entity: &str, field: &str, expr: Expr) {
@@ -140,14 +166,32 @@ impl Evaluator {
                 if let Some(val) = self.env.get(name) {
                     return Ok(val.clone());
                 }
+                if let Some(val) = self.agg_store.get(name, "") {
+                    return Ok(val.clone());
+                }
                 Err(RuntimeError::R001 { instance: name.clone() })
             }
 
             Expr::FieldAccess { obj, field, .. } => {
-                let inst_name = match obj.as_ref() {
+                let mut inst_name = match obj.as_ref() {
                     Expr::Ident(n) => n.clone(),
                     _ => return Err(RuntimeError::R001 { instance: format!("{:?}", obj) }),
                 };
+
+                // Bug Fix: If inst_name is an entity name, and it matches the current context's entity,
+                // then resolve it to the context instance.
+                if let Some(ctx_inst) = ctx {
+                    if let Some(ctx_ent) = self.instances.get(ctx_inst) {
+                        if &inst_name == ctx_ent {
+                            inst_name = ctx_inst.to_string();
+                        }
+                    }
+                }
+
+                if let Some(val) = self.agg_store.get(&inst_name, field) {
+                    return Ok(val.clone());
+                }
+
                 let instance = self.store.get(&inst_name)
                     .ok_or(RuntimeError::R001 { instance: inst_name.clone() })?;
                 instance.get(field).cloned()
@@ -399,18 +443,24 @@ impl Evaluator {
 
     // ── Statement executor ────────────────────────────────
 
-    pub fn exec_statement(&mut self, stmt: &Statement) -> Result<(), RuntimeError> {
+    pub fn exec_statement(&mut self, stmt: &Statement) -> Result<Vec<FiredEvent>, RuntimeError> {
         match stmt {
-            Statement::Entity(_) | Statement::ExternalEntity(_) | Statement::Rule(_) => Ok(()),
+            Statement::Entity(_) | Statement::ExternalEntity(_) | Statement::Rule(_) => Ok(vec![]),
+            Statement::Aggregate(decl) => {
+                self.agg_store.register(decl.clone());
+                self.agg_store.recompute(&self.store);
+                Ok(vec![])
+            }
             Statement::Fn(decl) => {
                 self.functions.insert(decl.name.clone(), decl.clone());
-                Ok(())
+                Ok(vec![])
             }
             Statement::Let(ls) => {
                 match &ls.value {
                     LetValue::Expr(expr) => {
                         let val = self.eval_expr(expr, None)?;
                         self.env.insert(ls.name.clone(), val);
+                        Ok(vec![])
                     }
                     LetValue::EntityInit(init) => {
                         let mut fields = HashMap::new();
@@ -424,34 +474,44 @@ impl Evaluator {
                         // Compute derived fields for the new instance
                         self.propagate_derived(&inst_name, &entity_name)?;
                         self.store.commit_all();
+                        
+                        // Initial rule evaluation for this new instance
+                        self.evaluate_rules(&inst_name)
                     }
                 }
-                Ok(())
             }
-            Statement::Action(a) => { self.exec_action(a)?; Ok(()) }
-            Statement::Import(_) => Ok(())
+            Statement::Action(a) => self.exec_action(a, None),
+            Statement::Import(_) => Ok(vec![])
         }
     }
 
     // ── Action executor ───────────────────────────────────
 
-    pub fn exec_action(&mut self, action: &Action) -> Result<Vec<FiredEvent>, RuntimeError> {
+    pub fn exec_action(&mut self, action: &Action, ctx: Option<&str>) -> Result<Vec<FiredEvent>, RuntimeError> {
         match action {
             Action::Show(expr) => {
-                let val = self.eval_expr(expr, None)?;
+                let val = self.eval_expr(expr, ctx)?;
                 let s = val.to_string();
                 println!("{}", s);
                 self.output.push(s);
                 Ok(vec![])
             }
             Action::Update { target, value } => {
-                let val = self.eval_expr(value, None)?;
-                self.apply_update(&target.instance, &target.field, val)
+                let val = self.eval_expr(value, ctx)?;
+                let mut inst_name = target.instance.clone();
+                if let Some(ctx_inst) = ctx {
+                    if let Some(ctx_ent) = self.instances.get(ctx_inst) {
+                        if ctx_ent == &inst_name {
+                            inst_name = ctx_inst.to_string();
+                        }
+                    }
+                }
+                self.apply_update(&inst_name, &target.field, val)
             }
             Action::Create { entity, fields } => {
                 let mut fv = HashMap::new();
                 for (name, expr) in fields {
-                    fv.insert(name.clone(), self.eval_expr(expr, None)?);
+                    fv.insert(name.clone(), self.eval_expr(expr, ctx)?);
                 }
                 let count = self.store.all_of_entity(entity).count();
                 let inst_name = format!("{}_{}", entity.to_lowercase(), count + 1);
@@ -460,8 +520,45 @@ impl Evaluator {
                 Ok(vec![])
             }
             Action::Delete(name) => {
-                self.store.remove(name).ok_or(RuntimeError::R001 { instance: name.clone() })?;
+                let mut inst_name = name.clone();
+                if let Some(ctx_inst) = ctx {
+                    if let Some(ctx_ent) = self.instances.get(ctx_inst) {
+                        if ctx_ent == &inst_name {
+                            inst_name = ctx_inst.to_string();
+                        }
+                    }
+                }
+                self.store.remove(&inst_name).ok_or(RuntimeError::R001 { instance: inst_name.clone() })?;
                 Ok(vec![])
+            }
+            Action::Alert(alert_action) => {
+                let severity = self.eval_expr(&alert_action.severity, ctx)?
+                    .to_string();
+                let message = self.eval_expr(&alert_action.message, ctx)?
+                    .to_string();
+                let source = alert_action.source.as_ref()
+                    .and_then(|e| self.eval_expr(e, ctx).ok())
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+
+                // Validate severity
+                match severity.as_str() {
+                    "info" | "warning" | "critical" | "resolved" => {}
+                    _ => return Err(RuntimeError::R002),
+                }
+
+                // Output for development visibility
+                let line = format!("[ALERT:{}] {} -- {}", severity, source, message);
+                println!("{}", line);
+                self.output.push(line);
+
+                Ok(vec![FiredEvent {
+                    rule: ctx.unwrap_or("").to_string(),
+                    instance: source,
+                    severity,
+                    message,
+                    ts: self.now,
+                }])
             }
         }
     }
@@ -487,7 +584,8 @@ impl Evaluator {
 
         let snap = self.snapshots.take(&self.store);
         self.snapshots.push(snap);
-
+        self.agg_store.recompute(&self.store);
+        
         let entity_name = self.store.get(instance_name)
             .ok_or(RuntimeError::R001 { instance: instance_name.to_string() })?
             .entity_name.clone();
@@ -562,12 +660,20 @@ impl Evaluator {
         let mut all_events = Vec::new();
         let rules_clone = self.rules.clone();
         for rule in &rules_clone {
+            // FIX Issue 6: Check if instance was deleted by a previous rule in this cycle
+            if self.store.get(instance_name).is_none() {
+                break; // Instance is gone, stop evaluating rules for it
+            }
+
             match &rule.trigger {
                 RuleTrigger::When(condition) => {
+                    let active_key = (rule.name.clone(), instance_name.to_string());
                     match rules::condition_is_met(self, condition, instance_name, true) {
                         Ok(true) => {
                             let fire_key = format!("{}::{}", rule.name, instance_name);
                             if self.fired_this_cycle.contains(&fire_key) {
+                                // Mark as active even if we skip firing
+                                self.rule_active.insert(active_key, true);
                                 continue;
                             }
                             if let Some(dur) = &condition.for_duration {
@@ -575,19 +681,50 @@ impl Evaluator {
                                     &rule.name, instance_name, dur.to_seconds(),
                                 );
                             } else {
+                                if let Some(cd) = &rule.cooldown {
+                                    if !self.should_fire(&rule.name, instance_name, cd) {
+                                        self.rule_active.insert(active_key, true);
+                                        continue;
+                                    }
+                                }
+                                self.record_firing(&rule.name, instance_name);
+
                                 self.fired_this_cycle.insert(fire_key);
-                                for action in &rule.actions {
-                                    let evts = self.exec_action(action)?;
+                                 for action in &rule.actions {
+                                    let evts = self.exec_action(action, Some(instance_name))?;
                                     all_events.extend(evts);
                                 }
                                 all_events.push(FiredEvent {
                                     rule: rule.name.clone(),
                                     instance: instance_name.to_string(),
+                                    severity: "info".to_string(),
+                                    message: format!("Rule '{}' fired", rule.name),
+                                    ts: self.now,
                                 });
                             }
+                            self.rule_active.insert(active_key, true);
                         }
                         Ok(false) => {
                             self.timers.cancel_for_timer(&rule.name, instance_name);
+                            // on_clear: if rule was previously active, fire on_clear actions
+                            let was_active = self.rule_active.get(&active_key).copied().unwrap_or(false);
+                            if was_active {
+                                self.rule_active.insert(active_key, false);
+                                if let Some(clear_actions) = &rule.on_clear {
+                                    let clear_actions = clear_actions.clone();
+                                    for action in &clear_actions {
+                                        let evts = self.exec_action(action, Some(instance_name))?;
+                                        all_events.extend(evts);
+                                    }
+                                    all_events.push(FiredEvent {
+                                        rule: format!("{}_clear", rule.name),
+                                        instance: instance_name.to_string(),
+                                        severity: "resolved".to_string(),
+                                        message: format!("Rule '{}' cleared", rule.name),
+                                        ts: self.now,
+                                    });
+                                }
+                            }
                         }
                         Err(e) => return Err(e),
                     }
@@ -607,12 +744,15 @@ impl Evaluator {
                         if !self.fired_this_cycle.contains(&fire_key) {
                             self.fired_this_cycle.insert(fire_key);
                             for action in &rule.actions {
-                                let evts = self.exec_action(action)?;
+                                let evts = self.exec_action(action, None)?;
                                 all_events.extend(evts);
                             }
                             all_events.push(FiredEvent {
                                 rule: rule.name.clone(),
                                 instance: "fleet".to_string(),
+                                severity: "info".to_string(),
+                                message: format!("Fleet any trigger fired for '{}'", rule.name),
+                                ts: self.now,
                             });
                         }
                     }
@@ -633,12 +773,15 @@ impl Evaluator {
                         if !self.fired_this_cycle.contains(&fire_key) {
                             self.fired_this_cycle.insert(fire_key);
                             for action in &rule.actions {
-                                let evts = self.exec_action(action)?;
+                                let evts = self.exec_action(action, None)?;
                                 all_events.extend(evts);
                             }
                             all_events.push(FiredEvent {
                                 rule: rule.name.clone(),
                                 instance: "fleet".to_string(),
+                                severity: "info".to_string(),
+                                message: format!("Fleet all trigger fired for '{}'", rule.name),
+                                ts: self.now,
                             });
                         }
                     }
@@ -652,13 +795,15 @@ impl Evaluator {
 
     /// Run a full sweep of all rules across all instances.
     /// Typically used after initialization to establish first stable state.
-    pub fn recalculate_all_rules(&mut self) -> Result<(), RuntimeError> {
+    pub fn recalculate_all_rules(&mut self) -> Result<Vec<FiredEvent>, RuntimeError> {
+        let mut all_events = Vec::new();
         let instance_names: Vec<String> = self.store.all().map(|(n, _)| n.clone()).collect();
         for name in instance_names {
-            self.evaluate_rules(&name)?;
+            let evts = self.evaluate_rules(&name)?;
+            all_events.extend(evts);
         }
         self.store.commit_all();
-        Ok(())
+        Ok(all_events)
     }
 
     fn propagate_derived(&mut self, instance_name: &str, entity_name: &str) -> Result<(), RuntimeError> {
@@ -669,8 +814,19 @@ impl Evaluator {
         derived.sort_by_key(|(e, f)| self.graph.get_node(e, f).unwrap_or(u32::MAX));
 
         for (ent, field) in derived {
-            if let Some(expr) = self.derived_exprs.get(&(ent, field.clone())).cloned() {
+            if let Some(expr) = self.derived_exprs.get(&(ent.clone(), field.clone())).cloned() {
+                // Capture old value for fleet tracking
+                let old_val = self.store.get(instance_name).and_then(|inst| inst.get(&field)).cloned();
+                
                 let val = self.eval_expr(&expr, Some(instance_name))?;
+                
+                // Update fleet state if field is Boolean
+                if let Value::Bool(new_b) = &val {
+                    let old_b = if let Some(Value::Bool(b)) = old_val { b } else { false };
+                    let total = self.store.all_of_entity(&ent).count();
+                    self.fleet_state.update(&ent, &field, old_b, *new_b, total);
+                }
+
                 if let Some(inst) = self.store.get_mut(instance_name) {
                     inst.set(&field, val);
                 }
@@ -685,14 +841,18 @@ impl Evaluator {
         rule: &RuleDecl,
         instance_name: &str,
     ) -> Result<Vec<FiredEvent>, RuntimeError> {
+        let ctx = if instance_name.is_empty() { None } else { Some(instance_name) };
         let mut events = vec![];
         for action in &rule.actions {
-            let evts = self.exec_action(action)?;
+            let evts = self.exec_action(action, ctx)?;
             events.extend(evts);
         }
         events.push(FiredEvent {
             rule: rule.name.clone(),
             instance: instance_name.to_string(),
+            severity: "info".to_string(),
+            message: format!("Timer callback for '{}'", rule.name),
+            ts: self.now,
         });
         Ok(events)
     }
@@ -827,6 +987,7 @@ impl Evaluator {
             instances.insert(name.clone(), serde_json::json!({
                 "entity": instance.entity_name,
                 "fields": fields,
+                "active_alert": self.rule_active.iter().any(|((_, inst), active)| inst == name && *active),
             }));
         }
         serde_json::json!({
@@ -1104,5 +1265,31 @@ entity Battery {
             ev.store.get("batt1").unwrap().get("drop"),
             Some(&Value::Number(10.0)) // 100 - 90
         );
+    }
+
+    #[test]
+    fn test_cascading_cleanup_issue_6() {
+        let source = r#"
+            entity Resource { status: Text }
+            rule "cleanup" {
+                when Resource.status == "deleted" becomes true
+                then delete Resource
+            }
+            rule "log_deleted" {
+                when Resource.status == "deleted" becomes true
+                then update Resource.status to "forgotten"
+            }
+        "#;
+        let mut ev = build_eval(source);
+        ev.instances.insert("res1".to_string(), "Resource".to_string());
+        ev.store.insert("res1".to_string(), crate::store::Instance::new("Resource", vec![("status".to_string(), Value::Text("active".to_string()))].into_iter().collect()));
+
+        
+        let res = ev.apply_update("res1", "status", Value::Text("deleted".to_string()));
+        
+        // Output should not panic or return an error like R001 "Unknown instance" because the second rule will be skipped safely
+        res.unwrap();
+        // Specifically, it should not exist in the store
+        assert!(ev.store.get("res1").is_none());
     }
 }

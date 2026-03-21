@@ -93,7 +93,7 @@ Run this full suite before any pull request:
 
 1. **Full workspace:** `cargo test --workspace`
 2. **CLI E2E:** `cargo build --release` && `cargo run -p lumina-cli -- run tests/spec/fleet.lum`
-3. **C FFI:** `cargo build --release -p lumina-ffi`
+3. **C FFI:** `cargo build --release -p lumina_ffi`
 4. **WASM target:** `cd crates/lumina-wasm && wasm-pack build --target web --release`
 
 ## Engine Integrity

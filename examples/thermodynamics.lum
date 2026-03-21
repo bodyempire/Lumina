@@ -3,7 +3,7 @@
 
 entity Sensor {
   @doc "Temperature measured in Celsius"
-  @range -50 to 150
+  @range 0 to 150
   temp: Number
   
   -- The system continuously calculates boolean boundary states:

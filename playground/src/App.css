@@ -1,0 +1,159 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #1e1e1e;
+    color: #e5e5e5;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    background-color: #252526;
+    border-bottom: 1px solid #3c3c3c;
+    height: 60px;
+}
+
+h1 {
+    font-size: 1.2rem;
+    color: #007acc;
+    margin: 0;
+}
+
+.toolbar {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+button {
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+button:hover { background-color: #1177bb; }
+button.active { background-color: #1177bb; outline: 2px solid white; }
+
+main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.editor-pane {
+    flex: 2;
+    border-right: 1px solid #3c3c3c;
+    display: flex;
+    flex-direction: column;
+}
+
+.error-panel {
+    background-color: #4d0f0f;
+    color: #f88;
+    padding: 10px;
+    max-height: 30%;
+    overflow-y: auto;
+    border-top: 1px dashed #f88;
+}
+.error-panel pre { margin: 0; white-space: pre-wrap; font-family: monospace; }
+
+.state-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1e1e1e;
+}
+
+.state-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    border-bottom: 1px solid #3c3c3c;
+}
+
+.timeline {
+    height: 30%;
+    overflow-y: auto;
+    padding: 20px;
+    background-color: #252526;
+    color: #1e1e1e;
+}
+
+.timeline h4 {
+    color: #e5e5e5;
+    margin-top: 0;
+}
+
+.timeline div {
+    display: flex;
+    gap: 10px;
+    padding: 8px;
+    margin-bottom: 5px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.card {
+    background-color: #2d2d30;
+    border: 1px solid #3c3c3c;
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.card.alert {
+    border-color: #f48771;
+    box-shadow: 0 0 10px rgba(244, 135, 113, 0.2);
+}
+
+.card h3 {
+    margin: 0 0 15px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.badge {
+    background-color: #f48771;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: normal;
+}
+
+.stored, .derived {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid #3c3c3c;
+    font-size: 14px;
+}
+
+.derived {
+    color: #4ec9b0;
+    font-style: italic;
+}
+
+.clock {
+    display: flex;
+    gap: 5px;
+    background-color: #1e1e1e;
+    padding: 4px;
+    border-radius: 4px;
+}

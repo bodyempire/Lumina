@@ -62,7 +62,7 @@ crates/lumina-diagnostics/ -- DiagnosticRenderer, SourceLocation
 
 crates/lumina-runtime/ -- Evaluator, Value::List, built-in list fns, adapter stub
 
-crates/lumina-ffi/ -- C API, Python bindings, Go wrapper
+crates/lumina_ffi/ -- C API, Python bindings, Go wrapper
 
 crates/lumina-wasm/ -- WASM target, playground v1
 

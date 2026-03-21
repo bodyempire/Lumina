@@ -141,6 +141,7 @@ impl Parser {
             }
             Token::KwFn       => self.parse_fn_decl(),
             Token::Import     => self.parse_import(),
+            Token::Aggregate  => self.parse_aggregate(),
             _ => Err(ParseError::new(
                 format!("unexpected token: {:?}", self.current()),
                 self.current_span(),
@@ -392,9 +393,82 @@ impl Parser {
             ));
         };
 
+        let cooldown = if self.check(&Token::Cooldown) {
+            self.advance();
+            Some(self.parse_duration()?)
+        } else {
+            None
+        };
+
         let actions = self.parse_actions()?;
+
+        // Parse optional "on clear { ... }" block
+        self.skip_newlines();
+        let on_clear = if self.check(&Token::KwOn) {
+            // Peek ahead to see if it's "on clear"
+            if self.peek() == Some(&Token::Clear) {
+                self.advance(); // consume 'on'
+                self.advance(); // consume 'clear'
+                self.expect(&Token::LBrace)?;
+                self.skip_newlines();
+                let clear_actions = self.parse_actions()?;
+                self.expect(&Token::RBrace)?;
+                self.skip_newlines();
+                Some(clear_actions)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         self.expect(&Token::RBrace)?;
-        Ok(Statement::Rule(RuleDecl { name, trigger, actions, span: start }))
+        Ok(Statement::Rule(RuleDecl { name, trigger, actions, cooldown, on_clear, span: start }))
+    }
+
+    fn parse_aggregate(&mut self) -> Result<Statement, ParseError> {
+        let span = self.current_span();
+        self.advance(); // consume "aggregate"
+
+        let name = self.expect_ident("aggregate name")?;
+        self.expect(&Token::Over)?;
+        let over = self.expect_ident("entity name")?;
+        self.expect(&Token::LBrace)?;
+
+        let mut fields = Vec::new();
+        while !self.check(&Token::RBrace) && !self.is_at_end() {
+            let fspan    = self.current_span();
+            let fname    = self.expect_ident("field name")?;
+            self.expect(&Token::ColonEq)?; // ":=" derived assignment
+            let agg_fn   = self.expect_ident("aggregate function")?;
+            self.expect(&Token::LParen)?;
+            let arg = if self.check(&Token::RParen) {
+                None
+            } else {
+                Some(self.expect_ident("field name")?)
+            };
+            self.expect(&Token::RParen)?;
+
+            let expr = match agg_fn.as_str() {
+                "avg"   => AggregateExpr::Avg(arg.unwrap_or_default()),
+                "min"   => AggregateExpr::Min(arg.unwrap_or_default()),
+                "max"   => AggregateExpr::Max(arg.unwrap_or_default()),
+                "sum"   => AggregateExpr::Sum(arg.unwrap_or_default()),
+                "count" => AggregateExpr::Count(arg),
+                "any"   => AggregateExpr::Any(arg.unwrap_or_default()),
+                "all"   => AggregateExpr::All(arg.unwrap_or_default()),
+                other   => return Err(ParseError::new(
+                    format!("unknown aggregate function: {}", other),
+                    self.current_span()
+                )),
+            };
+
+            fields.push(AggregateField { name: fname, expr, span: fspan });
+            self.skip_newlines();
+        }
+        self.expect(&Token::RBrace)?;
+
+        Ok(Statement::Aggregate(AggregateDecl { name, over, fields, span }))
     }
 
     fn parse_fleet_condition(&mut self) -> Result<FleetCondition, ParseError> {
@@ -494,6 +568,51 @@ impl Parser {
                 self.advance();
                 let name = self.expect_ident("instance name")?;
                 Ok(Action::Delete(name))
+            }
+            Token::Alert => {
+                let span = self.current_span();
+                self.advance(); // consume "alert"
+
+                let mut severity: Option<Expr> = None;
+                let mut message:  Option<Expr> = None;
+                let mut source:   Option<Expr> = None;
+                let mut code:     Option<Expr> = None;
+                let mut payload:  Vec<(String, Expr)> = Vec::new();
+
+                // Parse key: value pairs separated by commas
+                loop {
+                    let key = match self.current() {
+                        Token::Severity => { self.advance(); "severity".to_string() },
+                        Token::Ident(s) if s == "message" => { self.advance(); "message".to_string() },
+                        Token::Ident(s) if s == "source"  => { self.advance(); "source".to_string() },
+                        Token::Ident(s) if s == "code"    => { self.advance(); "code".to_string() },
+                        Token::Ident(s) => {
+                            let k = s.clone();
+                            self.advance();
+                            k
+                        }
+                        _ => break,
+                    };
+                    self.expect(&Token::Colon)?;
+                    let val = self.parse_expr(0)?;
+                    match key.as_str() {
+                        "severity" => severity = Some(val),
+                        "message"  => message  = Some(val),
+                        "source"   => source   = Some(val),
+                        "code"     => code     = Some(val),
+                        _          => payload.push((key, val)),
+                    }
+                    if !self.check(&Token::Comma) { break; }
+                    self.advance(); // consume comma
+                }
+
+                let severity = severity.ok_or_else(|| ParseError::new("alert requires severity", span))?;
+                let message  = message.ok_or_else(||  ParseError::new("alert requires message", span))?;
+
+                Ok(Action::Alert(AlertAction {
+                    severity, message, source, code, payload,
+                    span,
+                }))
             }
             _ => Err(ParseError::new(
                 format!("expected action keyword, got {:?}", self.current()),

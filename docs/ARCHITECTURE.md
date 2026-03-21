@@ -57,13 +57,13 @@ Lumina implements a **Self-Healing Guarantee**. Before any destructive action:
 
 ---
 
-## 4. v1.5 Roadmap (Planned Features)
-The follow architectural components are part of the v1.5 design specification and are currently under development:
+## 4. v1.5 Implementation Status
+All architectural components of the v1.5 specification are now fully operational:
 
-*   **`AggregateStore`**: A specialized storage layer for named, top-level fleet-wide facts like `avg` and `sum` over entity instances.
-*   **Structured Alerting**: Integrated support for `alert` actions with severity levels, source tracking, and consistent metadata.
-*   **Recovery Logic (`on clear`)**: Architectural support for rule "clear" events, allowing for automated incident resolution detection.
-*   **Rule Cooldown Engine**: A logic gate in the rule firing pipeline that enforces temporal gaps between repeated firings.
+*   **`AggregateStore`**: A specialized storage layer that maintains named, top-level fleet-wide facts like `avg` and `sum` with O(1) read performance.
+*   **Structured Alerting**: Full support for `alert` actions, providing consistent metadata (severity, source, code) across FFI and WASM boundaries.
+*   **Recovery Logic (`on clear`)**: Integrated support for rule "clear" events, enabling automated lifecycle tracking from incident to resolution.
+*   **Rule Cooldown Engine**: A logic gate in the firing pipeline that enforces temporal gaps, preventing alert storms from flapping sensors.
 
 ---
 

@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 # Add lumina_py to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "crates", "lumina-ffi")))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "crates", "lumina_ffi")))
 from lumina_py import LuminaRuntime
 
 app = Flask(__name__, static_folder="public", static_url_path="/")

@@ -1,0 +1,53 @@
+-- cool_features.lum
+-- Demonstrates v1.5 features: prev(), any/all, and temporal logic
+
+entity Drone {
+    battery: Number
+    isMoving: Boolean
+    
+    -- Trend detection using prev()
+    isDraining := battery < prev(battery)
+    isCharging := battery > prev(battery)
+
+    -- Boolean flags for fleet monitoring
+    isLowBattery := battery < 20
+}
+
+-- Fleet-level: triggers if AT LEAST ONE drone is low on battery
+rule "Fleet Low Battery Warning" {
+    when any Drone.isLowBattery becomes true
+    then show "FLEET WARNING: At least one drone has critically low battery!"
+}
+
+-- Fleet-level: triggers only when ALL drones are stationary
+rule "Fleet Dormant" {
+    when all Drone.isMoving becomes false
+    then show "Fleet is now fully dormant."
+}
+
+-- Temporal logic: watchdog for "stuck" drones
+rule "Stuck Drone Watchdog" {
+    when Drone.isMoving becomes true for 5 s
+    then show "WATCHDOG: A drone has been moving for 5s. Check for navigation loops."
+}
+
+-- Initial State
+let drone1 = Drone { battery: 100, isMoving: false }
+let drone2 = Drone { battery: 80, isMoving: false }
+
+show "System initialized. Fleet monitoring active."
+
+-- Simulation of a battery drain
+update drone1.battery to 95
+show "Drone 1 is draining: {drone1.isDraining}"
+
+-- Simulation of a low battery warning
+update drone1.battery to 15
+
+-- Simulation of fleet dormancy
+update drone1.isMoving to false
+update drone2.isMoving to false
+
+-- Simulation of a stuck drone
+update drone1.isMoving to true
+-- (Wait for tick to process the 5s window)

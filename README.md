@@ -12,18 +12,28 @@ Modern software architecture frequently struggles with the synchronization of di
 
 ### 1.1 Key Features in v1.5
 *   **Declarative Entity Modeling**: Fields are partitioned into basal and derived categories. Derived fields (`:=`) maintain a strictly guaranteed relationship with their dependencies through continuous topological re-evaluation.
-*   **Fleet-Level Triggers**: Support for `when any` and `when all` conditions across entity instances (e.g., `when any Moto.battery becomes < 10`).
+*   **Fleet-Level Triggers**: Support for `any` and `all` conditions across entity instances (e.g., `when any Moto.battery becomes < 10`).
+*   **Aggregates**: Structural `aggregate` blocks for defining fleet-wide facts like `avg`, `sum`, `min`, `max`, and `count` with O(1) read performance.
+*   **Structured Alerting**: Native `alert` actions with severity levels, source tracking, and consistent metadata.
+*   **Recovery Logic (`on clear`)**: Automatic firing of actions when a rule condition is no longer met.
+*   **Rule Cooldowns**: Silence periods to prevent alert storms from flapping sensors.
 *   **Historical State Access**: Use the `prev()` keyword to access a field's value from the previous engine tick.
 *   **External Entities & Adapters**: Native support for synchronizing state with external sources (e.g., Supabase, MQTT) via the Adapter protocol.
 *   **List & Collection Types**: First-class support for list types (`type[]`), list literals (`[...]`), and element indexing (`list[0]`).
-*   **Built-in Aggregates**: High-performance built-in functions for collection analysis (`len`, `sum`, `min`, `max`, etc.).
 *   **Pure Functions (`fn`)**: Stateless, side-effect-free functions for complex logic encapsulation.
 *   **Language Server Protocol (LSP)**: Full IDE support with real-time error squiggles, hover tooltips, and document symbol navigation.
-*   **Temporal Logic Triggers**: `for` and `every` reactive clauses enable interval-based and sustained-duration logic.
 
 ---
 
-## 2. Architecture and Execution Model
+## 2. Documentation
+
+*   **[Lumina Complete Guide (v1.5)](./docs/Lumina_Complete_Guide.md)**: The definitive 34-chapter guide to the language, architecture, and tooling.
+*   **[Language Specification](./docs/SPEC.md)**: Formal EBNF grammar.
+*   **[Architecture Overview](./docs/ARCHITECTURE.md)**: Deep dive into the reactive engine and snapshot VM.
+
+---
+
+## 3. Architecture and Execution Model
 
 The Lumina compiler and runtime pipeline is implemented in Rust, exploiting zero-cost abstractions and strict memory safety guarantees. Every program flows through this pipeline:
 
@@ -36,78 +46,38 @@ The Lumina compiler and runtime pipeline is implemented in Rust, exploiting zero
 
 ---
 
-## 3. Language Specification (v1.5 Example)
+## 4. Language Specification (v1.5 Example)
 
-### 3.1 Entity Schemas & Initialization
-Entities define the structure of state contexts.
+### 4.1 Entity Schemas & Rules
 
 ```lua
 import "types.lum"
 
-fn calculate_priority(battery: Number) -> Number {
-  if battery < 10 then 1 else 2
-}
-
 entity Moto {
-  @doc "Battery capacity measured in watt-hours (Wh)"
-  @range 0 to 100
   battery: Number
-  isBusy: Boolean
-  logs: Text[]
-  
-  -- Derived fields autonomously calculate their value topologically
-  priority    := calculate_priority(battery)
-  isCritical  := battery < 5
-  
-  -- Access historical state with prev()
-  wasCharged  := battery > prev(battery)
+  isCritical := battery < 5
 }
 
--- Instantiate with explicit basal fields
-let moto1 = Moto { battery: 80, isBusy: false, logs: ["init"] }
-```
-
-### 3.2 List Operations & Built-ins
-Lumina provides native operations for handling collections of data.
-
-```lua
-let numbers = [10, 20, 30, 40]
-let first = numbers[0]
-let total = sum(numbers)
-let count = len(numbers)
-
--- List functions
-let lowest = min(numbers)
-let highest = max(numbers)
-let tail_list = tail(numbers)
-```
-
-### 3.3 Fleet Triggers & Lifecycle
-Rules can monitor the entire fleet of entities or manage their existence.
-
-```lua
--- Fires when ANY instance becomes critical
-rule "Single Unit Critical" {
-  when any Moto.isCritical becomes true
-  then show "Critical unit detected."
+-- Aggregate fleet state reactively
+aggregate FleetStatus over Moto {
+  avgBattery := avg(battery)
+  onlineCount := count(isOnline)
 }
 
--- Create and Delete instances dynamically
-rule "Cleanup" {
-  when any Moto.battery becomes 0
-  then delete moto1
+-- Rule with structured alert, recovery logic, and cooldown
+rule Overheat when any Temp.isHigh becomes true cooldown 5m {
+  alert severity: "critical", message: "Unit is overheating!"
+} on clear {
+  alert severity: "resolved", message: "Temperature stabilized"
 }
 ```
 
 ---
 
-## 4. v1.5 Roadmap (Planned Features)
-The following features are part of the v1.5 design specification and are currently under development:
-
-*   **`aggregate` Blocks**: Top-level structural blocks for defining named fleet-wide facts (e.g., `aggregate FleetStatus over Moto { avgBattery := avg(battery) }`).
-*   **`alert` Action**: Specialized rule action for structured signals with severity levels and metadata.
-*   **`on clear` Blocks**: Recovery logic that fires when a rule condition is no longer met.
-*   **Rule `cooldown`**: Managing alert volume by enforcing wait periods between rule firings.
+## 5. v1.6 Roadmap (Future Work)
+*   **LSP Refactoring**: Go-to-definition and symbol renaming across modules.
+*   **Visual Debugger**: Live inspection of the dependency graph in the Playground.
+*   **Native Adapters**: Production-ready adapters for MQTT and Supabase.
 
 ---
 
@@ -143,7 +113,7 @@ Lumina implements a secure C ABI for integration into external environments.
 
 ```bash
 # Build the shared library
-cargo build --release -p lumina-ffi
+cargo build --release -p lumina_ffi
 ```
 
 ---

@@ -1,0 +1,9 @@
+rule "Fast Heartbeat" {
+  every 1 s
+  then show "Lumina is alive..."
+}
+
+rule "Slow Logger" {
+  every 10 s
+  then show "--- 10s Lumina logger ---"
+}

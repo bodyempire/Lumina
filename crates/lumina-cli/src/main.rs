@@ -91,8 +91,27 @@ fn cmd_run(args: &[String]) {
         }
     }
 
-    let state = evaluator.export_state();
-    println!("{}", serde_json::to_string_pretty(&state).unwrap());
+    // Initial state calculation
+    if let Err(e) = evaluator.recalculate_all_rules() {
+        eprintln!("Initialization error: {}", e.message());
+        std::process::exit(1);
+    }
+
+    if evaluator.timers.for_timers.is_empty() 
+        && evaluator.timers.every_timers.is_empty() 
+        && evaluator.adapters.is_empty() 
+    {
+        return;
+    }
+
+    println!("Running Lumina [Ctrl+C to stop]...");
+    loop {
+        if let Err(rollback) = evaluator.tick() {
+            eprintln!("Runtime error: {}", rollback.diagnostic.message);
+            std::process::exit(1);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 fn cmd_check(args: &[String]) {

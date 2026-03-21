@@ -51,10 +51,13 @@ pub struct PropResult {
     pub version:      u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FiredEvent {
     pub rule:     String,
     pub instance: String,
+    pub severity: String,
+    pub message:  String,
+    pub ts:       f64,
 }
 
 /// Returned when a propagation cycle is rolled back

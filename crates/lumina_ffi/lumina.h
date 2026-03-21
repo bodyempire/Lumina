@@ -35,9 +35,10 @@ char* lumina_export_state(const LuminaRuntime* runtime);
    Caller must free with lumina_free_string(). */
 char* lumina_tick(LuminaRuntime* runtime);
 
-/* Get the last error message (if lumina_create returned NULL).
+/* Get any strings printed by rule actions since the last call.
+   Returns JSON array of strings.
    Caller must free with lumina_free_string(). */
-char* lumina_last_error(const LuminaRuntime* runtime);
+char* lumina_get_messages(LuminaRuntime* runtime);
 
 /* Free a string returned by any runtime function. */
 void lumina_free_string(char* s);

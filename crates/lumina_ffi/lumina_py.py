@@ -6,10 +6,12 @@ Usage:
     rt.apply_event("moto1", "battery", 18)
     print(rt.export_state())
 """
+from __future__ import annotations
 import ctypes
 import json
 import os
 import sys
+from typing import Any, Dict, List, Optional, Union
 
 
 def _load_library():
@@ -27,8 +29,11 @@ def _load_library():
     for path in search:
         if os.path.exists(path):
             return ctypes.CDLL(os.path.abspath(path))
+    
+    tried = "\n".join([os.path.abspath(p) for p in search])
     raise FileNotFoundError(
-        f"Could not find {name}. Run 'cargo build --release -p lumina-ffi' first."
+        f"Could not find {name}.\nSearched paths:\n{tried}\n"
+        "Run 'cargo build --release -p lumina_ffi' first."
     )
 
 
@@ -68,7 +73,13 @@ class LuminaRuntime:
     def from_source(cls, source: str) -> "LuminaRuntime":
         handle = _lib.lumina_create(source.encode("utf-8"))
         if handle is None:
-            raise ValueError("Failed to create Lumina runtime — check source for errors")
+            # Try to get the specific reason from the thread-local storage in Rust
+            err_ptr = _lib.lumina_last_error(None)
+            if err_ptr:
+                msg = ctypes.string_at(err_ptr).decode("utf-8")
+                _lib.lumina_free_string(err_ptr)
+                raise ValueError(f"Failed to create Lumina runtime: {msg}")
+            raise ValueError("Failed to create Lumina runtime (unknown error - lib.last_error returned null)")
         return cls(handle)
 
     @classmethod
@@ -76,20 +87,17 @@ class LuminaRuntime:
         with open(path, "r") as f:
             return cls.from_source(f.read())
 
-    def _ffi_call(self, func, *args):
+    def _ffi_call(self, func, *args) -> Optional[str]:
         raw_ptr = func(self._handle, *args)
-        if raw_ptr is None:
+        if not raw_ptr:
             return None
         
-        # Cast to void_p first so we can free it later
-        ptr = ctypes.cast(raw_ptr, ctypes.c_char_p)
-        value = ptr.value.decode("utf-8") if ptr.value else None
-        
-        # Free the Rust-allocated string
+        # Decode and then free the Rust-allocated string
+        value = ctypes.string_at(raw_ptr).decode("utf-8")
         _lib.lumina_free_string(raw_ptr)
         return value
 
-    def apply_event(self, instance: str, field: str, value) -> dict:
+    def apply_event(self, instance: str, field: str, value: Any) -> Dict[str, Any]:
         value_json = json.dumps(value).encode("utf-8")
         result_str = self._ffi_call(
             _lib.lumina_apply_event,
@@ -100,28 +108,30 @@ class LuminaRuntime:
         if result_str is None:
             raise RuntimeError("lumina_apply_event returned null")
         if result_str.startswith("ERROR:"):
-            diag_str = result_str[6:]
+            diag_str = result_str.removeprefix("ERROR:")
             diag = json.loads(diag_str)
-            raise RuntimeError(f"Lumina rollback: {diag['message']}\nFix: {diag['suggested_fix']}")
+            msg = diag.get("message", "Unknown error")
+            fix = diag.get("suggested_fix", "No suggestion available")
+            raise RuntimeError(f"Lumina rollback: {msg}\nFix: {fix}")
         return json.loads(result_str)
 
-    def export_state(self) -> dict:
+    def export_state(self) -> Dict[str, Any]:
         result_str = self._ffi_call(_lib.lumina_export_state)
         if result_str is None:
             raise RuntimeError("lumina_export_state returned null")
         return json.loads(result_str)
 
-    def tick(self) -> list:
+    def tick(self) -> List[Dict[str, Any]]:
         result_str = self._ffi_call(_lib.lumina_tick)
         if result_str is None:
             return []
         if result_str.startswith("ERROR:"):
-            diag_str = result_str[6:]
+            diag_str = result_str.removeprefix("ERROR:")
             diag = json.loads(diag_str)
-            raise RuntimeError(f"Lumina tick rollback: {diag['message']}")
+            raise RuntimeError(f"Lumina tick rollback: {diag.get('message', 'Unknown error')}")
         return json.loads(result_str)
 
-    def get_messages(self) -> list:
+    def get_messages(self) -> List[str]:
         result_str = self._ffi_call(_lib.lumina_get_messages)
         if not result_str:
             return []

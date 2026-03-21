@@ -6,7 +6,7 @@ members = [
     "crates/lumina-analyzer",
     "crates/lumina-diagnostics",
     "crates/lumina-runtime",
-    "crates/lumina-ffi",
+    "crates/lumina_ffi",
     "crates/lumina-cli",
     "crates/lumina-wasm",
     "crates/lumina-lsp",
