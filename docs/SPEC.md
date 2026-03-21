@@ -12,8 +12,12 @@ statement ::= import_stmt
             | let_stmt
             | rule_decl
             | action_stmt
+            | aggregate_decl
             | external_decl
             | NEWLINE
+
+aggregate_decl ::= 'aggregate' IDENT 'over' IDENT '{' NEWLINE (IDENT ':=' aggregate_func NEWLINE)* '}'
+aggregate_func ::= ('avg' | 'min' | 'max' | 'sum' | 'count' | 'any' | 'all') '(' IDENT? ')'
 ```
 
 ## Modules and Functions
@@ -53,7 +57,8 @@ rule_decl ::= 'rule' STRING '{' NEWLINE
               ( 'when' condition NEWLINE
               | 'every' duration NEWLINE )
               ('then' action NEWLINE)+ 
-              ('on clear' '{' action+ '}')?  (* Reserved / Roadmap *)
+              ('on clear' '{' action+ '}')?
+              ('cooldown' duration)?
               '}'
 
 condition ::= fleet_trigger | expr
@@ -83,13 +88,13 @@ action ::= show_action
          | update_action
          | create_action
          | delete_action
-         | alert_action   (* Reserved / Roadmap *)
+         | alert_action
 
 show_action ::= 'show' expr
 update_action ::= 'update' IDENT '.' IDENT 'to' expr
 create_action ::= 'create' IDENT '{' NEWLINE (IDENT ':' expr NEWLINE)* '}'
 delete_action ::= 'delete' IDENT
-alert_action ::= 'alert' ... (* Reserved / Roadmap *)
+alert_action ::= 'alert' 'severity' ':' STRING (',' 'message' ':' STRING)? (',' 'source' ':' expr)? (',' 'code' ':' STRING)? (',' 'payload' ':' '{' ... '}')?
 ```
 
 ## 8. Expressions (Pratt Operator Precedence)
@@ -123,12 +128,10 @@ cmp_op ::= '==' | '!=' | '>' | '<' | '>=' | '<='
 
 ---
 
-## 9. v1.5 Roadmap Keywords (Reserved)
-The following keywords are reserved for upcoming features and are not yet active in the core grammar:
-*   `aggregate`, `over` (for Chapter 32 aggregate blocks)
-*   `alert`, `severity`, `source` (for structured signals)
-*   `cooldown` (for rule rate-limiting)
-*   `on clear` (for recovery actions)
+## 9. Version History
+*   **v1.5**: LSP, External Entities, `prev()`, Aggregates, `on clear`, Cooldowns, Playground v2.
+*   **v1.4**: Functions, Modules, String Interpolation, Lists, Go FFI, REPL v2, Diagnostics.
+*   **v1.3**: Core reactive engine, Entities, Rules, Actions, CLI.
 
 ---
 
