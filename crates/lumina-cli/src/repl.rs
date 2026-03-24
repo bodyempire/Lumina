@@ -95,7 +95,7 @@ impl ReplSession {
             }
 
             match self.evaluator.exec_statement(stmt) {
-                Ok(()) => {}
+                Ok(_) => {}
                 Err(e) => return ReplResult::Error(format!("{:?}", e)),
             }
         }

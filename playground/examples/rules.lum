@@ -1,0 +1,14 @@
+entity Person {
+    name : Text
+    age : Number
+    isAdult := age > 18
+}
+let isaac = Person {
+    name: "Isaac"
+    age: 22
+}
+
+rule "not allowed" {
+    when isaac.isAdult becomes true 
+    then show "Not Allowed to enter"
+}

@@ -1,0 +1,17 @@
+let current_year = 2026
+entity Person {
+    first_name: Text
+    last_name: Text
+    age: Number
+    isadult := age >= 18
+    fullName := first_name 
+    birth_year := current_year - age
+
+}
+let isaac = Person {
+    first_name:"Isaac"
+    last_name: "Ishimwe"
+    age: 22 
+}
+update isaac.first_name to "Body"
+show "{isaac.fullName} + {isaac.age}"

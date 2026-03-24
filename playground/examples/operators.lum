@@ -1,0 +1,8 @@
+let a = true and false
+let isadult = false
+let isverified = true
+let isBanned = false
+
+let canAccess = isAdult and isVerified and not isBanned
+
+show canAccess
