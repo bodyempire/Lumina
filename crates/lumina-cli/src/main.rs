@@ -21,7 +21,7 @@ fn main() {
         Some("check") => cmd_check(&args),
         Some("repl")  => cmd_repl(),
         _ => {
-            eprintln!("Lumina v1.3 — Declarative Reactive Language");
+            eprintln!("Lumina v1.5 — Declarative Reactive Language");
             eprintln!();
             eprintln!("Usage:");
             eprintln!("  lumina run <file.lum>     Run a Lumina program");
@@ -144,7 +144,7 @@ fn cmd_repl() {
     use crate::commands::run_command;
     use std::io::{self, BufRead, Write};
 
-    println!("Lumina v1.4 REPL — type Lumina expressions and statements");
+    println!("Lumina v1.5 REPL — type Lumina expressions and statements");
     println!("Type ':help' to see inspector commands\n");
 
     let mut session = ReplSession::new();
