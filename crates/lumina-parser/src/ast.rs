@@ -66,6 +66,14 @@ pub struct EntityDecl {
 pub enum Field {
     Stored(StoredField),
     Derived(DerivedField),
+    Ref(RefField),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefField {
+    pub name: String,
+    pub target_entity: String,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +108,7 @@ pub enum LuminaType {
     Text,
     Number,
     Boolean,
+    Timestamp,
     Entity(String),
     List(Box<LuminaType>),
 }
@@ -159,7 +168,7 @@ pub struct RuleDecl {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RuleTrigger {
-    When(Condition),
+    When(Vec<Condition>),
     Any(FleetCondition),
     All(FleetCondition),
     Every(Duration),
@@ -170,6 +179,7 @@ pub struct Condition {
     pub expr:         Expr,
     pub becomes:      Option<Expr>,
     pub for_duration: Option<Duration>,
+    pub frequency:    Option<Frequency>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,6 +188,14 @@ pub struct FleetCondition {
     pub field:        String,
     pub becomes:      Expr,
     pub for_duration: Option<Duration>,
+    pub frequency:    Option<Frequency>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Frequency {
+    pub count:  u32,
+    pub within: Duration,
+    pub span:   Span,
 }
 
 // ── Duration (for temporal rules) ─────────────────────────────────────────
@@ -217,6 +235,7 @@ pub enum TimeUnit {
 pub enum Action {
     Show(Expr),
     Update { target: FieldPath, value: Expr },
+    Write { target: FieldPath, value: Expr },
     Create { entity: String, fields: Vec<(String, Expr)> },
     Delete(String),
     Alert(AlertAction),

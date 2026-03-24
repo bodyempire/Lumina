@@ -135,6 +135,14 @@ impl Analyzer {
                         metadata: f.metadata.clone(),
                     })
                 }
+                Field::Ref(r) => {
+                    (r.name.clone(), FieldSchema {
+                        name: r.name.clone(),
+                        ty: LuminaType::Entity(r.target_entity.clone()),
+                        is_derived: false,
+                        metadata: FieldMetadata::default(),
+                    })
+                }
             };
 
             if fields.contains_key(&name) {
@@ -186,6 +194,14 @@ impl Analyzer {
                         metadata: f.metadata.clone(),
                     })
                 }
+                Field::Ref(r) => {
+                    (r.name.clone(), FieldSchema {
+                        name: r.name.clone(),
+                        ty: LuminaType::Entity(r.target_entity.clone()),
+                        is_derived: false,
+                        metadata: FieldMetadata::default(),
+                    })
+                }
             };
             fields.insert(name, schema_field);
         }
@@ -219,23 +235,25 @@ impl Analyzer {
                 Statement::Rule(rule) => {
                     // Type check condition
                     match &rule.trigger {
-                        RuleTrigger::When(cond) => {
-                            let ty = self.infer_type(&cond.expr, None, None).map_err(|e| vec![e])?;
-                            if ty != LuminaType::Boolean {
-                                return Err(vec![AnalyzerError {
-                                    code: "L002",
-                                    message: "when condition must be Boolean".to_string(),
-                                    span: rule.span,
-                                }]);
-                            }
-                            if let Some(becomes) = &cond.becomes {
-                                let b_ty = self.infer_type(becomes, None, None).map_err(|e| vec![e])?;
-                                if b_ty != LuminaType::Boolean {
+                        RuleTrigger::When(conds) => {
+                            for cond in conds {
+                                let ty = self.infer_type(&cond.expr, None, None).map_err(|e| vec![e])?;
+                                if ty != LuminaType::Boolean {
                                     return Err(vec![AnalyzerError {
                                         code: "L002",
-                                        message: "becomes condition must be Boolean".to_string(),
+                                        message: "when condition must be Boolean".to_string(),
                                         span: rule.span,
                                     }]);
+                                }
+                                if let Some(becomes) = &cond.becomes {
+                                    let b_ty = self.infer_type(becomes, None, None).map_err(|e| vec![e])?;
+                                    if b_ty != LuminaType::Boolean {
+                                        return Err(vec![AnalyzerError {
+                                            code: "L002",
+                                            message: "becomes condition must be Boolean".to_string(),
+                                            span: rule.span,
+                                        }]);
+                                    }
                                 }
                             }
                         }
@@ -843,6 +861,24 @@ impl Analyzer {
                 Ok(())
             }
             Action::Alert(_) => Ok(()),
+            Action::Write { target, value } => {
+                // Write is only valid on external entity fields — full check in Phase 2
+                let entity_name = match self.instances.get(&target.instance) {
+                    Some(LuminaType::Entity(e)) => e,
+                    _ => &target.instance,
+                };
+                if let Some(field_schema) = self.schema.get_field(entity_name, &target.field) {
+                    let val_ty = self.infer_type(value, None, None).map_err(|e| vec![e])?;
+                    if val_ty != field_schema.ty {
+                        return Err(vec![AnalyzerError {
+                            code: "L002",
+                            message: "Type mismatch in write".to_string(),
+                            span: target.span,
+                        }]);
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }

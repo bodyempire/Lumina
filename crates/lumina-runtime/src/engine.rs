@@ -560,6 +560,18 @@ impl Evaluator {
                     ts: self.now,
                 }])
             }
+            Action::Write { target, value } => {
+                let val = self.eval_expr(value, ctx)?;
+                let mut inst_name = target.instance.clone();
+                if let Some(ctx_inst) = ctx {
+                    if let Some(ctx_ent) = self.instances.get(ctx_inst) {
+                        if ctx_ent == &inst_name {
+                            inst_name = ctx_inst.to_string();
+                        }
+                    }
+                }
+                self.apply_update(&inst_name, &target.field, val)
+            }
         }
     }
 
@@ -666,17 +678,23 @@ impl Evaluator {
             }
 
             match &rule.trigger {
-                RuleTrigger::When(condition) => {
+                RuleTrigger::When(conditions) => {
                     let active_key = (rule.name.clone(), instance_name.to_string());
-                    match rules::condition_is_met(self, condition, instance_name, true) {
-                        Ok(true) => {
+                    // All conditions in the compound trigger must be met
+                    let all_met = conditions.iter().all(|c| {
+                        rules::condition_is_met(self, c, instance_name, true).unwrap_or(false)
+                    });
+                    match all_met {
+                        true => {
                             let fire_key = format!("{}::{}", rule.name, instance_name);
                             if self.fired_this_cycle.contains(&fire_key) {
                                 // Mark as active even if we skip firing
                                 self.rule_active.insert(active_key, true);
                                 continue;
                             }
-                            if let Some(dur) = &condition.for_duration {
+                            // Use the for_duration from the first condition if present
+                            let for_duration = conditions.first().and_then(|c| c.for_duration.as_ref());
+                            if let Some(dur) = for_duration {
                                 let _ = self.timers.start_for_timer(
                                     &rule.name, instance_name, dur.to_seconds(),
                                 );
@@ -704,7 +722,7 @@ impl Evaluator {
                             }
                             self.rule_active.insert(active_key, true);
                         }
-                        Ok(false) => {
+                        false => {
                             self.timers.cancel_for_timer(&rule.name, instance_name);
                             // on_clear: if rule was previously active, fire on_clear actions
                             let was_active = self.rule_active.get(&active_key).copied().unwrap_or(false);
@@ -726,7 +744,6 @@ impl Evaluator {
                                 }
                             }
                         }
-                        Err(e) => return Err(e),
                     }
                 }
                 RuleTrigger::Any(fc) => {
@@ -897,10 +914,10 @@ impl Evaluator {
                 .find(|r| r.name == timer.rule_name)
                 .cloned();
             if let Some(rule) = rule {
-                if let RuleTrigger::When(condition) = &rule.trigger {
-                    let still_true = rules::condition_is_met(
-                        self, condition, &timer.instance_name, false
-                    ).unwrap_or(false);
+                if let RuleTrigger::When(conditions) = &rule.trigger {
+                    let still_true = conditions.iter().all(|c| {
+                        rules::condition_is_met(self, c, &timer.instance_name, false).unwrap_or(false)
+                    });
                     if still_true {
                         let snap = self.snapshots.take(&self.store);
                         match self.exec_rule_actions(&rule, &timer.instance_name) {
