@@ -184,8 +184,14 @@ impl Parser {
 
         if self.check(&Token::Colon) {
             self.advance();
-            let ty = self.parse_type()?;
-            Ok(Field::Stored(StoredField { name, ty, metadata, span: start }))
+            if self.check(&Token::KwRef) {
+                self.advance();
+                let target_entity = self.expect_ident("target entity name")?;
+                Ok(Field::Ref(RefField { name, target_entity, span: start }))
+            } else {
+                let ty = self.parse_type()?;
+                Ok(Field::Stored(StoredField { name, ty, metadata, span: start }))
+            }
         } else if self.check(&Token::ColonEq) {
             self.advance();
             let expr = self.parse_expr(0)?;
@@ -232,6 +238,7 @@ impl Parser {
             Token::KwTypeText    => { self.advance(); LuminaType::Text }
             Token::KwTypeNumber  => { self.advance(); LuminaType::Number }
             Token::KwTypeBoolean => { self.advance(); LuminaType::Boolean }
+            Token::KwTypeTimestamp => { self.advance(); LuminaType::Timestamp }
             Token::Ident(_) => {
                 let name = self.expect_ident("type name")?;
                 LuminaType::Entity(name)
@@ -381,7 +388,12 @@ impl Parser {
                 self.advance();
                 RuleTrigger::All(self.parse_fleet_condition()?)
             } else {
-                RuleTrigger::When(self.parse_condition()?)
+                let mut conds = vec![self.parse_condition()?];
+                while self.check(&Token::KwAnd) {
+                    self.advance();
+                    conds.push(self.parse_condition()?);
+                }
+                RuleTrigger::When(conds)
             }
         } else if self.check(&Token::KwEvery) {
             self.advance();
@@ -482,7 +494,15 @@ impl Parser {
             self.advance();
             Some(self.parse_duration()?)
         } else { None };
-        Ok(FleetCondition { entity, field, becomes, for_duration })
+        let frequency = if matches!(self.current(), Token::Number(_)) {
+            let span = self.current_span();
+            let count = self.expect_number("frequency count")? as u32;
+            self.expect(&Token::KwTimes)?;
+            self.expect(&Token::KwWithin)?;
+            let within = self.parse_duration()?;
+            Some(Frequency { count, within, span })
+        } else { None };
+        Ok(FleetCondition { entity, field, becomes, for_duration, frequency })
     }
 
     fn parse_condition(&mut self) -> Result<Condition, ParseError> {
@@ -495,7 +515,15 @@ impl Parser {
             self.advance();
             Some(self.parse_duration()?)
         } else { None };
-        Ok(Condition { expr, becomes, for_duration })
+        let frequency = if matches!(self.current(), Token::Number(_)) {
+            let span = self.current_span();
+            let count = self.expect_number("frequency count")? as u32;
+            self.expect(&Token::KwTimes)?;
+            self.expect(&Token::KwWithin)?;
+            let within = self.parse_duration()?;
+            Some(Frequency { count, within, span })
+        } else { None };
+        Ok(Condition { expr, becomes, for_duration, frequency })
     }
 
     fn parse_duration(&mut self) -> Result<Duration, ParseError> {
@@ -543,6 +571,19 @@ impl Parser {
                 self.expect(&Token::KwTo)?;
                 let value = self.parse_expr(0)?;
                 Ok(Action::Update {
+                    target: FieldPath { instance, field, span },
+                    value,
+                })
+            }
+            Token::KwWrite => {
+                self.advance();
+                let instance = self.expect_ident("instance name")?;
+                self.expect(&Token::Dot)?;
+                let field = self.expect_ident("field name")?;
+                let span = self.current_span();
+                self.expect(&Token::Eq)?;
+                let value = self.parse_expr(0)?;
+                Ok(Action::Write {
                     target: FieldPath { instance, field, span },
                     value,
                 })
@@ -736,6 +777,18 @@ impl Parser {
                 // Otherwise it's a plain identifier reference
                 Ok(Expr::Ident(name))
             }
+            Token::KwNow => {
+                let name = "now".to_string();
+                self.advance();
+                
+                if self.check(&Token::LParen) {
+                    self.advance(); // consume "("
+                    self.expect(&Token::RParen)?;
+                    return Ok(Expr::Call { name, args: vec![], span });
+                }
+                
+                Ok(Expr::Ident(name))
+            }
             Token::LParen => {
                 self.advance();
                 let expr = self.parse_expr(0)?;
@@ -875,7 +928,9 @@ mod tests {
             Statement::Rule(r) => {
                 assert_eq!(r.name, "lock bike");
                 match &r.trigger {
-                    RuleTrigger::When(c) => {
+                    RuleTrigger::When(conds) => {
+                        assert_eq!(conds.len(), 1);
+                        let c = &conds[0];
                         assert!(c.becomes.is_some());
                         assert!(c.for_duration.is_some());
                         let d = c.for_duration.as_ref().unwrap();

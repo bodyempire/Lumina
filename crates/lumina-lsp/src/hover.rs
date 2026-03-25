@@ -23,11 +23,18 @@ pub fn hover_at(prog: &Program, _src: &str, pos: Position) -> Option<Hover> {
                     &df.metadata.doc,
                     df.metadata.range,
                 ),
+                Field::Ref(rf) => (
+                    &rf.name,
+                    &rf.span,
+                    &None,
+                    None,
+                ),
             };
 
             let type_label = match f {
                 Field::Stored(sf) => format!("{:?}", sf.ty),
                 Field::Derived(_) => "derived".to_string(),
+                Field::Ref(rf) => format!("ref {}", rf.target_entity),
             };
 
             let l = span.line.saturating_sub(1);

@@ -217,11 +217,12 @@ mod tests {
             },
             RuleDecl {
                 name: "on_change".to_string(),
-                trigger: RuleTrigger::When(Condition {
+                trigger: RuleTrigger::When(vec![Condition {
                     expr: Expr::Bool(true),
                     becomes: None,
                     for_duration: None,
-                }),
+                    frequency: None,
+                }]),
                 actions: vec![],
                 cooldown: None,
                 on_clear: None,
