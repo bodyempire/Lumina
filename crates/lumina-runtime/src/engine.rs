@@ -175,6 +175,20 @@ impl Evaluator {
             Expr::FieldAccess { obj, field, .. } => {
                 let mut inst_name = match obj.as_ref() {
                     Expr::Ident(n) => n.clone(),
+                    // Support chained ref traversal: a.b.c
+                    Expr::FieldAccess { .. } => {
+                        let ref_val = self.eval_expr(obj, ctx)?;
+                        match ref_val {
+                            // .age on a Timestamp value
+                            Value::Timestamp(ts) => {
+                                if field == "age" {
+                                    return Ok(Value::Number(self.now - ts));
+                                }
+                                return Err(RuntimeError::R005 { instance: "Timestamp".into(), field: field.clone() });
+                            }
+                            _ => return Err(RuntimeError::R001 { instance: format!("{:?}", obj) }),
+                        }
+                    }
                     _ => return Err(RuntimeError::R001 { instance: format!("{:?}", obj) }),
                 };
 
@@ -194,8 +208,26 @@ impl Evaluator {
 
                 let instance = self.store.get(&inst_name)
                     .ok_or(RuntimeError::R001 { instance: inst_name.clone() })?;
-                instance.get(field).cloned()
-                    .ok_or(RuntimeError::R005 { instance: inst_name, field: field.clone() })
+
+                let val = instance.get(field).cloned()
+                    .ok_or(RuntimeError::R005 { instance: inst_name.clone(), field: field.clone() })?;
+
+                // .age accessor on a Timestamp field value
+                if field == "age" {
+                    // This branch won't fire — age is not a stored field.
+                    // The Timestamp .age case is handled via the match on Value::Timestamp below.
+                    return Ok(val);
+                }
+
+                // If the resolved value is a Timestamp and we're accessing .age on it,
+                // that's handled by chained FieldAccess above. For single-level access,
+                // check if the caller wants .age on the result:
+                match &val {
+                    Value::Timestamp(ts) if field == "age" => {
+                        Ok(Value::Number(self.now - ts))
+                    }
+                    _ => Ok(val),
+                }
             }
 
             Expr::Binary { op, left, right, .. } => {
@@ -293,6 +325,9 @@ impl Evaluator {
                             return Err(RuntimeError::R004 { index: idx, len: list.len() });
                         }
                         return Ok(list[idx].clone());
+                    }
+                    "now" => {
+                        return Ok(Value::Timestamp(self.now));
                     }
                     _ => {} // Fall through to user-defined fn lookup
                 }
@@ -570,7 +605,26 @@ impl Evaluator {
                         }
                     }
                 }
-                self.apply_update(&inst_name, &target.field, val)
+                // Dispatch to adapter if one is registered for this entity
+                let entity_name = self.instances.get(&inst_name)
+                    .cloned()
+                    .unwrap_or_else(|| inst_name.clone());
+                let mut dispatched = false;
+                for adapter in &mut self.adapters {
+                    if adapter.entity_name() == entity_name {
+                        adapter.on_write(&target.field, &val);
+                        dispatched = true;
+                        break;
+                    }
+                }
+                // Also update the local store so the state is consistent
+                if self.store.get(&inst_name).is_some() {
+                    self.apply_update(&inst_name, &target.field, val)
+                } else if dispatched {
+                    Ok(vec![])
+                } else {
+                    self.apply_update(&inst_name, &target.field, val)
+                }
             }
         }
     }
@@ -1042,6 +1096,7 @@ impl Evaluator {
                     .collect();
                 serde_json::json!(arr)
             }
+            Value::Timestamp(t) => serde_json::json!(*t),
         }
     }
 }

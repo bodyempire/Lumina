@@ -7,15 +7,17 @@ pub enum Value {
     Text(String),
     Bool(bool),
     List(Vec<Value>),
+    Timestamp(f64),
 }
 
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
-            Value::Number(_) => "Number",
-            Value::Text(_)   => "Text",
-            Value::Bool(_)   => "Boolean",
-            Value::List(_)   => "List",
+            Value::Number(_)    => "Number",
+            Value::Text(_)      => "Text",
+            Value::Bool(_)      => "Boolean",
+            Value::List(_)      => "List",
+            Value::Timestamp(_) => "Timestamp",
         }
     }
 
@@ -41,7 +43,8 @@ impl Value {
             (Value::Number(_), Value::Number(_)) |
             (Value::Text(_),   Value::Text(_))   |
             (Value::Bool(_),   Value::Bool(_))   |
-            (Value::List(_),   Value::List(_))
+            (Value::List(_),   Value::List(_))   |
+            (Value::Timestamp(_), Value::Timestamp(_))
         )
     }
 }
@@ -63,6 +66,7 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Timestamp(t) => write!(f, "Timestamp({})", t),
         }
     }
 }
