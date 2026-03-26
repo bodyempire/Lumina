@@ -41,6 +41,12 @@ pub enum Token {
     #[token("over")]      Over,
     #[token("cooldown")]   Cooldown,
     #[token("clear")]      Clear,
+    #[token("ref")]        KwRef,
+    #[token("times")]      KwTimes,
+    #[token("within")]     KwWithin,
+    #[token("write")]      KwWrite,
+    #[token("Timestamp")]  KwTypeTimestamp,
+    #[token("now")]        KwNow,
 
     // ── Operators & punctuation ────────────────────────────
     #[token(":=")]  ColonEq,

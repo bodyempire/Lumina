@@ -5,10 +5,14 @@ use tower_lsp::{Client, LanguageServer};
 use lumina_parser::parse;
 use lumina_analyzer::analyze;
 use crate::{diag::to_lsp_diags, hover::hover_at};
+use crate::semantic;
+use crate::refs;
+use crate::action;
+use crate::inlay;
 
 pub struct LuminaBackend {
     client: Client,
-    docs: DashMap<Url, (String, Option<lumina_parser::ast::Program>)>,
+    docs: DashMap<Url, (String, Option<lumina_parser::ast::Program>, Vec<lumina_diagnostics::Diagnostic>)>,
 }
 
 impl LuminaBackend {
@@ -70,7 +74,7 @@ impl LuminaBackend {
             }
             None => vec![],
         };
-        self.docs.insert(uri.clone(), (src, prog));
+        self.docs.insert(uri.clone(), (src, prog, diags.clone()));
         self.client.publish_diagnostics(uri, to_lsp_diags(&diags), None).await;
     }
 }
@@ -89,6 +93,20 @@ impl LanguageServer for LuminaBackend {
                     trigger_characters: Some(vec![".".into(), " ".into()]),
                     ..Default::default()
                 }),
+                rename_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
+                inlay_hint_provider: Some(OneOf::Left(true)),
+                semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+                    SemanticTokensOptions {
+                        legend: SemanticTokensLegend {
+                            token_types: semantic::LEGEND_TYPES.to_vec(),
+                            token_modifiers: vec![],
+                        },
+                        full: Some(SemanticTokensFullOptions::Bool(true)),
+                        ..Default::default()
+                    }
+                )),
                 ..Default::default()
             },
             ..Default::default()
@@ -113,8 +131,81 @@ impl LanguageServer for LuminaBackend {
         let uri = p.text_document_position_params.text_document.uri;
         let pos = p.text_document_position_params.position;
         Ok(self.docs.get(&uri).and_then(|e| {
-            let (src, prog) = e.value();
+            let (src, prog, _) = e.value();
             prog.as_ref().and_then(|p| hover_at(p, src, pos))
         }))
+    }
+
+    async fn references(&self, p: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let uri = p.text_document_position.text_document.uri;
+        let pos = p.text_document_position.position;
+        if let Some(doc) = self.docs.get(&uri) {
+            let (src, prog, _) = doc.value();
+            if let Some(prog) = prog {
+                if let Some(symbol) = refs::symbol_at_position(prog, src, pos) {
+                    let locations = refs::find_references_in_program(prog, &symbol, &uri);
+                    return Ok(Some(locations));
+                }
+            }
+        }
+        Ok(Some(vec![]))
+    }
+
+    async fn rename(&self, p: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = p.text_document_position.text_document.uri;
+        let pos = p.text_document_position.position;
+        let new_name = p.new_name;
+        if let Some(doc) = self.docs.get(&uri) {
+            let (src, prog, _) = doc.value();
+            if let Some(prog) = prog {
+                if let Some(old_name) = refs::symbol_at_position(prog, src, pos) {
+                    let edits = refs::build_rename_edits(prog, src, &uri, &old_name, &new_name);
+                    if !edits.is_empty() {
+                        let mut changes = std::collections::HashMap::new();
+                        changes.insert(uri.clone(), edits);
+                        return Ok(Some(WorkspaceEdit {
+                            changes: Some(changes),
+                            ..Default::default()
+                        }));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn code_action(&self, p: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let uri = p.text_document.uri;
+        if let Some(doc) = self.docs.get(&uri) {
+            let (_, _, diags) = doc.value();
+            let actions = action::generate_actions(&uri, diags);
+            return Ok(Some(actions));
+        }
+        Ok(None)
+    }
+
+    async fn inlay_hint(&self, p: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        let uri = p.text_document.uri;
+        if let Some(doc) = self.docs.get(&uri) {
+            if let Some(prog) = &doc.value().1 {
+                return Ok(Some(inlay::get_inlay_hints(prog)));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn semantic_tokens_full(&self, p: SemanticTokensParams) -> Result<Option<SemanticTokensResult>> {
+        let uri = p.text_document.uri;
+        if let Some(doc) = self.docs.get(&uri) {
+            let (src, prog, _) = doc.value();
+            if let Some(prog) = prog {
+                let tokens = semantic::get_semantic_tokens(prog, src);
+                return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+                    result_id: None,
+                    data: tokens,
+                })));
+            }
+        }
+        Ok(None)
     }
 }

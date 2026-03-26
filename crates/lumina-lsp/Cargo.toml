@@ -1,12 +1,13 @@
 [package]
 name = "lumina-lsp"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2021"
 
 [[bin]]
 name = "lumina-lsp"
 
 [dependencies]
+lumina-lexer = { path = "../lumina-lexer" }
 lumina-parser = { path = "../lumina-parser" }
 lumina-analyzer = { path = "../lumina-analyzer" }
 lumina-diagnostics = { path = "../lumina-diagnostics" }

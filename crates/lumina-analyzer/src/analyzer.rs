@@ -30,6 +30,7 @@ pub struct Analyzer {
     pub fn_defs: HashMap<String, FnDecl>,
     pub instances: HashMap<String, LuminaType>,
     in_prev_context: bool,
+    in_derived_context: bool,
 }
 
 impl Analyzer {
@@ -43,6 +44,7 @@ impl Analyzer {
             fn_defs: HashMap::new(),
             instances: HashMap::new(),
             in_prev_context: false,
+            in_derived_context: false,
         }
     }
 
@@ -135,6 +137,19 @@ impl Analyzer {
                         metadata: f.metadata.clone(),
                     })
                 }
+                Field::Ref(r) => {
+                    // L036: Validate ref target entity exists
+                    if !self.schema.entities.contains_key(&r.target_entity) {
+                        // Defer check — target may not be registered yet in pass1
+                        // We'll validate in pass2 instead
+                    }
+                    (r.name.clone(), FieldSchema {
+                        name: r.name.clone(),
+                        ty: LuminaType::Entity(r.target_entity.clone()),
+                        is_derived: false,
+                        metadata: FieldMetadata::default(),
+                    })
+                }
             };
 
             if fields.contains_key(&name) {
@@ -186,6 +201,14 @@ impl Analyzer {
                         metadata: f.metadata.clone(),
                     })
                 }
+                Field::Ref(r) => {
+                    (r.name.clone(), FieldSchema {
+                        name: r.name.clone(),
+                        ty: LuminaType::Entity(r.target_entity.clone()),
+                        is_derived: false,
+                        metadata: FieldMetadata::default(),
+                    })
+                }
             };
             fields.insert(name, schema_field);
         }
@@ -199,43 +222,101 @@ impl Analyzer {
     }
 
     fn pass2_typecheck(&mut self, program: &Program) -> Result<(), Vec<AnalyzerError>> {
+        // L036: Validate all ref targets exist now that all entities are registered
+        for stmt in &program.statements {
+            let fields = match stmt {
+                Statement::Entity(e) => Some((&e.fields, e.span)),
+                Statement::ExternalEntity(e) => Some((&e.fields, e.span)),
+                _ => None,
+            };
+            if let Some((fields, span)) = fields {
+                for field in fields {
+                    if let Field::Ref(r) = field {
+                        if !self.schema.entities.contains_key(&r.target_entity) {
+                            return Err(vec![AnalyzerError {
+                                code: "L036",
+                                message: format!("ref target entity '{}' does not exist", r.target_entity),
+                                span: r.span,
+                            }]);
+                        }
+                    }
+                }
+            }
+        }
+
         for stmt in &program.statements {
             match stmt {
                 Statement::Entity(decl) => {
                     for field in &decl.fields {
-                        if let Field::Derived(df) = field {
-                            let ty = self.infer_type(&df.expr, Some(&decl.name), None).map_err(|e| vec![e])?;
-                            if let Some(entity) = self.schema.entities.get_mut(&decl.name) {
-                                if let Some(f_schema) = entity.fields.get_mut(&df.name) {
-                                    f_schema.ty = ty;
+                        match field {
+                            Field::Derived(df) => {
+                                let ty = self.infer_type_ctx(&df.expr, Some(&decl.name), None, true).map_err(|e| vec![e])?;
+                                if let Some(entity) = self.schema.entities.get_mut(&decl.name) {
+                                    if let Some(f_schema) = entity.fields.get_mut(&df.name) {
+                                        f_schema.ty = ty;
+                                    }
                                 }
+                                // Build dependency graph for derived fields
+                                let target_node = self.graph.intern(&decl.name, &df.name);
+                                self.collect_dependencies(&df.expr, &decl.name, target_node)?;
                             }
-                            // Build dependency graph for derived fields
-                            let target_node = self.graph.intern(&decl.name, &df.name);
-                            self.collect_dependencies(&df.expr, &decl.name, target_node)?;
+                            Field::Ref(r) => {
+                                // L037: Add ref edges to the dependency graph for cycle detection
+                                let ref_node = self.graph.intern(&decl.name, &r.name);
+                                let target_node = self.graph.intern(&r.target_entity, "__entity__");
+                                self.graph.add_edge(target_node, ref_node);
+                            }
+                            _ => {}
                         }
                     }
                 }
                 Statement::Rule(rule) => {
                     // Type check condition
                     match &rule.trigger {
-                        RuleTrigger::When(cond) => {
-                            let ty = self.infer_type(&cond.expr, None, None).map_err(|e| vec![e])?;
-                            if ty != LuminaType::Boolean {
+                        RuleTrigger::When(conds) => {
+                            // L035: Enforce maximum of 3 AND clauses
+                            if conds.len() > 3 {
                                 return Err(vec![AnalyzerError {
-                                    code: "L002",
-                                    message: "when condition must be Boolean".to_string(),
+                                    code: "L035",
+                                    message: format!("multi-condition trigger has {} clauses, max is 3", conds.len()),
                                     span: rule.span,
                                 }]);
                             }
-                            if let Some(becomes) = &cond.becomes {
-                                let b_ty = self.infer_type(becomes, None, None).map_err(|e| vec![e])?;
-                                if b_ty != LuminaType::Boolean {
+                            for cond in conds {
+                                let ty = self.infer_type(&cond.expr, None, None).map_err(|e| vec![e])?;
+                                if ty != LuminaType::Boolean {
                                     return Err(vec![AnalyzerError {
                                         code: "L002",
-                                        message: "becomes condition must be Boolean".to_string(),
+                                        message: "when condition must be Boolean".to_string(),
                                         span: rule.span,
                                     }]);
+                                }
+                                if let Some(becomes) = &cond.becomes {
+                                    let b_ty = self.infer_type(becomes, None, None).map_err(|e| vec![e])?;
+                                    if b_ty != LuminaType::Boolean {
+                                        return Err(vec![AnalyzerError {
+                                            code: "L002",
+                                            message: "becomes condition must be Boolean".to_string(),
+                                            span: rule.span,
+                                        }]);
+                                    }
+                                }
+                                // L039/L040: Validate frequency conditions
+                                if let Some(freq) = &cond.frequency {
+                                    if freq.count < 2 {
+                                        return Err(vec![AnalyzerError {
+                                            code: "L039",
+                                            message: format!("frequency count must be >= 2, got {}", freq.count),
+                                            span: freq.span,
+                                        }]);
+                                    }
+                                    if freq.within.to_seconds() <= 0.0 {
+                                        return Err(vec![AnalyzerError {
+                                            code: "L040",
+                                            message: "frequency window duration must be > 0".to_string(),
+                                            span: freq.span,
+                                        }]);
+                                    }
                                 }
                             }
                         }
@@ -279,6 +360,23 @@ impl Analyzer {
                                     message: "fleet trigger becomes value must be Boolean".to_string(),
                                     span: rule.span,
                                 }]);
+                            }
+                            // L039/L040: Validate fleet frequency conditions
+                            if let Some(freq) = &fc.frequency {
+                                if freq.count < 2 {
+                                    return Err(vec![AnalyzerError {
+                                        code: "L039",
+                                        message: format!("frequency count must be >= 2, got {}", freq.count),
+                                        span: freq.span,
+                                    }]);
+                                }
+                                if freq.within.to_seconds() <= 0.0 {
+                                    return Err(vec![AnalyzerError {
+                                        code: "L040",
+                                        message: "frequency window duration must be > 0".to_string(),
+                                        span: freq.span,
+                                    }]);
+                                }
                             }
                         }
                         RuleTrigger::Every(_) => {}
@@ -387,6 +485,16 @@ impl Analyzer {
         }
     }
 
+    /// Wrapper that sets derived context before delegating to infer_type.
+    /// Used for L041: now() is forbidden in derived field expressions.
+    fn infer_type_ctx(&mut self, expr: &Expr, entity_ctx: Option<&str>, locals: Option<&HashMap<String, LuminaType>>, is_derived: bool) -> Result<LuminaType, AnalyzerError> {
+        let prev = self.in_derived_context;
+        self.in_derived_context = is_derived;
+        let result = self.infer_type(expr, entity_ctx, locals);
+        self.in_derived_context = prev;
+        result
+    }
+
     fn infer_type(&self, expr: &Expr, entity_ctx: Option<&str>, locals: Option<&HashMap<String, LuminaType>>) -> Result<LuminaType, AnalyzerError> {
         match expr {
             Expr::Number(_) => Ok(LuminaType::Number),
@@ -432,9 +540,21 @@ impl Analyzer {
                             })
                         }
                     }
+                    // L042: .age on Timestamp returns Number (seconds)
+                    LuminaType::Timestamp => {
+                        if field == "age" {
+                            Ok(LuminaType::Number)
+                        } else {
+                            Err(AnalyzerError {
+                                code: "L042",
+                                message: format!("Timestamp only supports '.age' accessor, not '.{}'", field),
+                                span: *span,
+                            })
+                        }
+                    }
                     _ => Err(AnalyzerError {
                         code: "L002",
-                        message: "Field access only allowed on entities".to_string(),
+                        message: "Field access only allowed on entities or Timestamps".to_string(),
                         span: *span,
                     }),
                 }
@@ -527,8 +647,22 @@ impl Analyzer {
                 }
             }
             Expr::Call { name, args, span } => {
-                // Check built-in list functions first
+                // Check built-in functions first
                 match name.as_str() {
+                    "now" => {
+                        if !args.is_empty() {
+                            return Err(AnalyzerError { code: "L013", message: "now() takes no arguments".to_string(), span: *span });
+                        }
+                        // L041: now() cannot be used in derived field expressions
+                        if self.in_derived_context {
+                            return Err(AnalyzerError {
+                                code: "L041",
+                                message: "now() cannot be used in derived field expressions".to_string(),
+                                span: *span,
+                            });
+                        }
+                        return Ok(LuminaType::Timestamp);
+                    }
                     "len" => {
                         if args.len() != 1 {
                             return Err(AnalyzerError { code: "L013", message: format!("len expects 1 arg, got {}", args.len()), span: *span });
@@ -843,6 +977,45 @@ impl Analyzer {
                 Ok(())
             }
             Action::Alert(_) => Ok(()),
+            Action::Write { target, value } => {
+                let entity_name = match self.instances.get(&target.instance) {
+                    Some(LuminaType::Entity(e)) => e,
+                    _ => &target.instance,
+                };
+                // L038: write actions can only target external entities
+                if let Some(entity_schema) = self.schema.get_entity(entity_name) {
+                    if !entity_schema.is_external {
+                        return Err(vec![AnalyzerError {
+                            code: "L038",
+                            message: format!("write action can only target external entities, '{}' is not external", entity_name),
+                            span: target.span,
+                        }]);
+                    }
+                    if let Some(field_schema) = entity_schema.fields.get(&target.field) {
+                        let val_ty = self.infer_type(value, None, None).map_err(|e| vec![e])?;
+                        if val_ty != field_schema.ty {
+                            return Err(vec![AnalyzerError {
+                                code: "L002",
+                                message: "Type mismatch in write".to_string(),
+                                span: target.span,
+                            }]);
+                        }
+                    } else {
+                        return Err(vec![AnalyzerError {
+                            code: "L010",
+                            message: format!("Unknown field '{}' on entity '{}'", target.field, entity_name),
+                            span: target.span,
+                        }]);
+                    }
+                } else {
+                    return Err(vec![AnalyzerError {
+                        code: "L001",
+                        message: format!("Unknown entity: {}", entity_name),
+                        span: target.span,
+                    }]);
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -919,5 +1092,53 @@ mod tests {
         let source = "entity A { x: Boolean } rule \"test\" { when A.x becomes true then show \"changed\" }";
         let res = analyze_source(source).expect("analysis should succeed");
         assert_eq!(res.program.statements.len(), 2);
+    }
+
+    // ── Phase 2: L035–L042 tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_l036_ref_to_nonexistent_entity() {
+        let source = "entity A { link: ref NonExistent }";
+        let errs = analyze_source(source).unwrap_err();
+        assert!(errs.iter().any(|e| e.code == "L036"), "expected L036, got: {:?}", errs);
+    }
+
+    #[test]
+    fn test_valid_ref_declaration() {
+        let source = "entity Cooling { ok: Boolean } entity Server { cooling: ref Cooling }";
+        let res = analyze_source(source).expect("valid ref should pass");
+        let server = res.schema.get_entity("Server").unwrap();
+        assert!(server.fields.contains_key("cooling"));
+    }
+
+    #[test]
+    fn test_l038_write_on_non_external_entity() {
+        let source = "entity Local { x: Number } rule \"w\" { when true then write Local.x = 5 }";
+        let errs = analyze_source(source).unwrap_err();
+        assert!(errs.iter().any(|e| e.code == "L038"), "expected L038, got: {:?}", errs);
+    }
+
+    #[test]
+    fn test_l042_invalid_timestamp_accessor() {
+        let source = "entity S { ts: Timestamp bad := ts.foo }";
+        let errs = analyze_source(source).unwrap_err();
+        assert!(errs.iter().any(|e| e.code == "L042"), "expected L042, got: {:?}", errs);
+    }
+
+    #[test]
+    fn test_now_returns_timestamp() {
+        // now() in a rule condition is valid and should infer as Timestamp
+        let source = "entity S { ts: Timestamp } rule \"r\" { when true then update S.ts to now() }";
+        let res = analyze_source(source);
+        // This should either succeed or fail with a type mismatch (Timestamp == Timestamp => ok)
+        assert!(res.is_ok(), "now() should return Timestamp type, got: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_age_returns_number() {
+        // ts.age should return Number (seconds since timestamp)
+        let source = "entity S { ts: Timestamp stale := ts.age > 60 }";
+        let res = analyze_source(source);
+        assert!(res.is_ok(), ".age should return Number, got: {:?}", res.err());
     }
 }

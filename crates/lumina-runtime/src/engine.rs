@@ -175,6 +175,20 @@ impl Evaluator {
             Expr::FieldAccess { obj, field, .. } => {
                 let mut inst_name = match obj.as_ref() {
                     Expr::Ident(n) => n.clone(),
+                    // Support chained ref traversal: a.b.c
+                    Expr::FieldAccess { .. } => {
+                        let ref_val = self.eval_expr(obj, ctx)?;
+                        match ref_val {
+                            // .age on a Timestamp value
+                            Value::Timestamp(ts) => {
+                                if field == "age" {
+                                    return Ok(Value::Number(self.now - ts));
+                                }
+                                return Err(RuntimeError::R005 { instance: "Timestamp".into(), field: field.clone() });
+                            }
+                            _ => return Err(RuntimeError::R001 { instance: format!("{:?}", obj) }),
+                        }
+                    }
                     _ => return Err(RuntimeError::R001 { instance: format!("{:?}", obj) }),
                 };
 
@@ -194,8 +208,26 @@ impl Evaluator {
 
                 let instance = self.store.get(&inst_name)
                     .ok_or(RuntimeError::R001 { instance: inst_name.clone() })?;
-                instance.get(field).cloned()
-                    .ok_or(RuntimeError::R005 { instance: inst_name, field: field.clone() })
+
+                let val = instance.get(field).cloned()
+                    .ok_or(RuntimeError::R005 { instance: inst_name.clone(), field: field.clone() })?;
+
+                // .age accessor on a Timestamp field value
+                if field == "age" {
+                    // This branch won't fire — age is not a stored field.
+                    // The Timestamp .age case is handled via the match on Value::Timestamp below.
+                    return Ok(val);
+                }
+
+                // If the resolved value is a Timestamp and we're accessing .age on it,
+                // that's handled by chained FieldAccess above. For single-level access,
+                // check if the caller wants .age on the result:
+                match &val {
+                    Value::Timestamp(ts) if field == "age" => {
+                        Ok(Value::Number(self.now - ts))
+                    }
+                    _ => Ok(val),
+                }
             }
 
             Expr::Binary { op, left, right, .. } => {
@@ -293,6 +325,9 @@ impl Evaluator {
                             return Err(RuntimeError::R004 { index: idx, len: list.len() });
                         }
                         return Ok(list[idx].clone());
+                    }
+                    "now" => {
+                        return Ok(Value::Timestamp(self.now));
                     }
                     _ => {} // Fall through to user-defined fn lookup
                 }
@@ -560,6 +595,37 @@ impl Evaluator {
                     ts: self.now,
                 }])
             }
+            Action::Write { target, value } => {
+                let val = self.eval_expr(value, ctx)?;
+                let mut inst_name = target.instance.clone();
+                if let Some(ctx_inst) = ctx {
+                    if let Some(ctx_ent) = self.instances.get(ctx_inst) {
+                        if ctx_ent == &inst_name {
+                            inst_name = ctx_inst.to_string();
+                        }
+                    }
+                }
+                // Dispatch to adapter if one is registered for this entity
+                let entity_name = self.instances.get(&inst_name)
+                    .cloned()
+                    .unwrap_or_else(|| inst_name.clone());
+                let mut dispatched = false;
+                for adapter in &mut self.adapters {
+                    if adapter.entity_name() == entity_name {
+                        adapter.on_write(&target.field, &val);
+                        dispatched = true;
+                        break;
+                    }
+                }
+                // Also update the local store so the state is consistent
+                if self.store.get(&inst_name).is_some() {
+                    self.apply_update(&inst_name, &target.field, val)
+                } else if dispatched {
+                    Ok(vec![])
+                } else {
+                    self.apply_update(&inst_name, &target.field, val)
+                }
+            }
         }
     }
 
@@ -666,17 +732,23 @@ impl Evaluator {
             }
 
             match &rule.trigger {
-                RuleTrigger::When(condition) => {
+                RuleTrigger::When(conditions) => {
                     let active_key = (rule.name.clone(), instance_name.to_string());
-                    match rules::condition_is_met(self, condition, instance_name, true) {
-                        Ok(true) => {
+                    // All conditions in the compound trigger must be met
+                    let all_met = conditions.iter().all(|c| {
+                        rules::condition_is_met(self, c, instance_name, true).unwrap_or(false)
+                    });
+                    match all_met {
+                        true => {
                             let fire_key = format!("{}::{}", rule.name, instance_name);
                             if self.fired_this_cycle.contains(&fire_key) {
                                 // Mark as active even if we skip firing
                                 self.rule_active.insert(active_key, true);
                                 continue;
                             }
-                            if let Some(dur) = &condition.for_duration {
+                            // Use the for_duration from the first condition if present
+                            let for_duration = conditions.first().and_then(|c| c.for_duration.as_ref());
+                            if let Some(dur) = for_duration {
                                 let _ = self.timers.start_for_timer(
                                     &rule.name, instance_name, dur.to_seconds(),
                                 );
@@ -704,7 +776,7 @@ impl Evaluator {
                             }
                             self.rule_active.insert(active_key, true);
                         }
-                        Ok(false) => {
+                        false => {
                             self.timers.cancel_for_timer(&rule.name, instance_name);
                             // on_clear: if rule was previously active, fire on_clear actions
                             let was_active = self.rule_active.get(&active_key).copied().unwrap_or(false);
@@ -726,7 +798,6 @@ impl Evaluator {
                                 }
                             }
                         }
-                        Err(e) => return Err(e),
                     }
                 }
                 RuleTrigger::Any(fc) => {
@@ -897,10 +968,10 @@ impl Evaluator {
                 .find(|r| r.name == timer.rule_name)
                 .cloned();
             if let Some(rule) = rule {
-                if let RuleTrigger::When(condition) = &rule.trigger {
-                    let still_true = rules::condition_is_met(
-                        self, condition, &timer.instance_name, false
-                    ).unwrap_or(false);
+                if let RuleTrigger::When(conditions) = &rule.trigger {
+                    let still_true = conditions.iter().all(|c| {
+                        rules::condition_is_met(self, c, &timer.instance_name, false).unwrap_or(false)
+                    });
                     if still_true {
                         let snap = self.snapshots.take(&self.store);
                         match self.exec_rule_actions(&rule, &timer.instance_name) {
@@ -1025,6 +1096,7 @@ impl Evaluator {
                     .collect();
                 serde_json::json!(arr)
             }
+            Value::Timestamp(t) => serde_json::json!(*t),
         }
     }
 }
